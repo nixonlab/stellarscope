@@ -83,6 +83,7 @@ class Stellarscope(Telescope):
                 counts_outfile = counts_filename
 
             _assignments = tl.reassign(_method, _rprob)
+            _assigments_lil = scipy.sparse.lil_matrix(_assignments)
             _cell_count_matrix = scipy.sparse.dok_matrix((len(_allbc), _assignments.shape[1]))
 
             for i, _bcode in enumerate(_allbc):
@@ -91,14 +92,14 @@ class Stellarscope(Telescope):
                     _rows = _bcidx[_bcode]
                     _umis = _bcumi[_bcode]
                     _cell_assignments = _assignments[_rows, :]
-                    _cell_assignment_matrix = scipy.sparse.lil_matrix(_cell_assignments)
                     _cell_final_assignments = _cell_assignments.argmax(axis=1)
                     _umi_assignments = pd.Series(
                         [(umi, assignment) for umi, assignment in zip(_umis, _cell_final_assignments.A1)]
                     )
                     _duplicate_umi_mask = _umi_assignments.duplicated(keep='first').values
-                    _cell_assignment_matrix[_duplicate_umi_mask, :] = 0
-                    _cell_count_matrix[i, :] = _cell_assignment_matrix.sum(0).A1
+                    _cell_assignment_lil_matrix = _assigments_lil[_rows, :]
+                    _cell_assignment_lil_matrix[_duplicate_umi_mask, :] = 0
+                    _cell_count_matrix[i, :] = scipy.sparse.csr_matrix(_cell_assignment_lil_matrix).sum(0).A1
                 else:
                     _cell_count_matrix[i, :] = 0
 
