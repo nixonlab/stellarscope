@@ -9,10 +9,10 @@ from distutils.core import setup
 from setuptools import Extension
 from setuptools import find_packages
 
-from telescope._version import VERSION
+from stellarscope._version import VERSION
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
 
 USE_CYTHON = True
 
@@ -28,8 +28,8 @@ htslib_include_dirs = [d for d in htslib_include_dirs if path.exists(str(d)) ]
 
 ext = '.pyx' if USE_CYTHON else '.c'
 extensions = [
-    Extension("telescope.utils.calignment",
-              ["telescope/utils/calignment"+ext],
+    Extension("stellarscope.utils.calignment",
+              ["stellarscope/utils/calignment"+ext],
               include_dirs=htslib_include_dirs,
               ),
 ]
@@ -39,7 +39,7 @@ if USE_CYTHON:
     extensions = cythonize(extensions)
 
 setup(
-    name='telescope-ngs',
+    name='stellarscope-ngs',
     version=VERSION.split('+')[0],
     packages=find_packages(),
 
@@ -56,8 +56,7 @@ setup(
     # Runnable scripts
     entry_points={
         'console_scripts': [
-            'telescope=telescope.__main__:telescope',
-            'stellarscope=telescope.__main__:stellarscope',
+            'stellarscope=stellarscope.__main__:stellarscope',
         ],
     },
 
@@ -66,7 +65,7 @@ setup(
 
     # data
     package_data = {
-        'telescope': [
+        'stellarscope': [
             'data/alignment.bam',
             'data/annotation.gtf',
             'data/telescope_report.tsv',

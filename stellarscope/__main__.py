@@ -11,8 +11,6 @@ import argparse
 import errno
 
 from ._version import VERSION
-from . import telescope_assign
-from . import telescope_resume
 from . import stellarscope_cellsort
 from . import stellarscope_assign
 from . import stellarscope_merge
@@ -52,52 +50,6 @@ The most commonly used commands are:
     resume    Resume previous run from checkpoint file
     test      Generate a command line for testing
 '''
-
-def telescope():
-
-    parser = argparse.ArgumentParser(
-        description='telescope: Locus-specific quantification of transposable element expression from RNA-seq data',
-        usage=TS_USAGE
-    )
-
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
-
-    parser.add_argument('--version',
-        action='version',
-        version=VERSION,
-        default=VERSION,
-    )
-
-    subparsers = parser.add_subparsers(help='sub-command help')
-
-    ''' Parser for assign '''
-    assign_parser = subparsers.add_parser('assign',
-        description='''Reassign ambiguous fragments that map to repetitive
-                       elements''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    telescope_assign.TelescopeAssignOptions.add_arguments(assign_parser)
-    assign_parser.set_defaults(func=telescope_assign.run)
-
-    ''' Parser for resume '''
-    resume_parser = subparsers.add_parser('resume',
-        description='''Resume a previous telescope run''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    telescope_resume.TelescopeResumeOptions.add_arguments(resume_parser)
-    resume_parser.set_defaults(func=telescope_resume.run)
-
-    test_parser = subparsers.add_parser('test',
-        description='''Print a test command''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    test_parser.set_defaults(func=lambda args: generate_test_command(args, singlecell = False))
-
-    args = parser.parse_args()
-    args.func(args)
-
 
 ST_USAGE = ''' %(prog)s <command> [<args>]
 
