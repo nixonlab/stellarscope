@@ -6,8 +6,8 @@ from nose import with_setup
 from nose.tools import assert_equals
 from random import randrange
 
-from telescope.tests import TEST_DATA_DIR
-from telescope.utils.annotation import get_annotation_class
+from stellarscope.tests import TEST_DATA_DIR
+from stellarscope.utils.annotation import get_annotation_class
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"

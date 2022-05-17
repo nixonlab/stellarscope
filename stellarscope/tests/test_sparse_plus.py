@@ -5,7 +5,7 @@ __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 
 from tempfile import TemporaryFile
 
-from telescope.utils.sparse_plus import csr_matrix_plus
+from stellarscope.utils.sparse_plus import csr_matrix_plus
 
 def sparse_equal(m1, m2):
     if m1.shape != m2.shape:
