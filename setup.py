@@ -76,10 +76,11 @@ setup(
     # metadata for upload to PyPI
     author='Matthew L. Bendall',
     author_email='bendall@gwu.edu',
-    description='Single locus resolution of Transposable ELEment expression using next-generation sequencing.',
+    description='Single cell, single locus resolution of transposable element expression '
+                'using next-generation sequencing.',
     license='MIT',
     keywords='',
-    url='https://github.com/mlbendall/telescope',
+    url='https://github.com/mlbendall/stellarscope',
 
     zip_safe=False
 )
