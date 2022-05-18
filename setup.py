@@ -49,7 +49,7 @@ setup(
         'cython',
         'numpy>=1.16.3',
         'scipy>=1.2.1',
-        'pysam==0.15.4',
+        'pysam>=0.19',
         'intervaltree>=3.0.2',
     ],
 
