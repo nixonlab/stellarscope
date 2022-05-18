@@ -1,5 +1,7 @@
-from pysam.libcalignedsegment cimport AlignedSegment
-from pysam.libcalignedsegment cimport AlignmentFile
+from pysam.libcalignmentfile cimport AlignmentFile, AlignedSegment
+
+# from pysam.libcalignedsegment cimport AlignedSegment
+# from pysam.libcalignedsegment cimport AlignmentFile
 
 from pysam.libchtslib cimport bam_destroy1
 
