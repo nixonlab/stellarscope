@@ -1,5 +1,7 @@
 import pandas as pd
 import scipy
+import warnings
+from scipy.sparse import SparseEfficiencyWarning
 from scipy import io
 from collections import defaultdict, OrderedDict
 
@@ -80,23 +82,22 @@ class Stellarscope(Telescope):
             counts_outfile = f'{counts_filename[:counts_filename.rfind(".")]}_{_method}.mtx'
 
             _assignments = tl.reassign(_method, _rprob)
-            _assigments_lil = scipy.sparse.lil_matrix(_assignments)
-            _cell_count_matrix = scipy.sparse.dok_matrix((len(_allbc), _assignments.shape[1]))
+            _assignments_lil = _assignments.tolil()
+            _cell_count_matrix = scipy.sparse.lil_matrix((len(_allbc), _assignments.shape[1]))
 
             for i, _bcode in enumerate(_allbc):
                 ''' If the barcode has reads that map to the annotation, sum the barcode's reads '''
                 if _bcode in _bcidx:
                     _rows = _bcidx[_bcode]
                     _umis = _bcumi[_bcode]
-                    _cell_assignments = _assignments[_rows, :]
-                    _cell_final_assignments = _cell_assignments.argmax(axis=1)
+                    _cell_assignments = _assignments_lil[_rows, :]
+                    _cell_final_assignments = _assignments[_rows, :].argmax(axis=1)
                     _umi_assignments = pd.Series(
                         [(umi, assignment) for umi, assignment in zip(_umis, _cell_final_assignments.A1)]
                     )
                     _duplicate_umi_mask = _umi_assignments.duplicated(keep='first').values
-                    _cell_assignment_lil_matrix = _assigments_lil[_rows, :]
-                    _cell_assignment_lil_matrix[_duplicate_umi_mask, :] = 0
-                    _cell_count_matrix[i, :] = _cell_assignment_lil_matrix.tocsr().sum(0).A1
+                    _cell_assignments[_duplicate_umi_mask, :] = 0
+                    _cell_count_matrix[i, :] = _cell_assignments.tocsr().sum(0).A1
                 else:
                     _cell_count_matrix[i, :] = 0
 
