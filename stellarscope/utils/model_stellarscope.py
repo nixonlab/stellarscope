@@ -77,7 +77,7 @@ class Stellarscope(Telescope):
             if _method != _rmethod and not self.opts.use_every_reassign_mode:
                 continue
 
-            counts_outfile = counts_filename[:counts_filename.rfind('.')] + '_' + _method + '.mtx'
+            counts_outfile = f'{counts_filename[:counts_filename.rfind(".")]}_{_method}.mtx'
 
             _assignments = tl.reassign(_method, _rprob)
             _assigments_lil = scipy.sparse.lil_matrix(_assignments)
@@ -96,7 +96,7 @@ class Stellarscope(Telescope):
                     _duplicate_umi_mask = _umi_assignments.duplicated(keep='first').values
                     _cell_assignment_lil_matrix = _assigments_lil[_rows, :]
                     _cell_assignment_lil_matrix[_duplicate_umi_mask, :] = 0
-                    _cell_count_matrix[i, :] = scipy.sparse.csr_matrix(_cell_assignment_lil_matrix).sum(0).A1
+                    _cell_count_matrix[i, :] = _cell_assignment_lil_matrix.tocsr().sum(0).A1
                 else:
                     _cell_count_matrix[i, :] = 0
 
