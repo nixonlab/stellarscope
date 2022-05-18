@@ -92,9 +92,7 @@ class Stellarscope(Telescope):
                     _umis = _bcumi[_bcode]
                     _cell_assignments = _assignments_lil[_rows, :]
                     _cell_final_assignments = _assignments[_rows, :].argmax(axis=1)
-                    _umi_assignments = pd.Series(
-                        [(umi, assignment) for umi, assignment in zip(_umis, _cell_final_assignments.A1)]
-                    )
+                    _umi_assignments = pd.Series(zip(_umis, _cell_final_assignments.A1))
                     _duplicate_umi_mask = _umi_assignments.duplicated(keep='first').values
                     _cell_assignments[_duplicate_umi_mask, :] = 0
                     _cell_count_matrix[i, :] = _cell_assignments.tocsr().sum(0).A1
