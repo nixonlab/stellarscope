@@ -39,7 +39,7 @@ if USE_CYTHON:
     extensions = cythonize(extensions)
 
 setup(
-    name='stellarscope-ngs',
+    name='stellarscope',
     version=VERSION.split('+')[0],
     packages=find_packages(),
 
@@ -49,7 +49,7 @@ setup(
         'cython',
         'numpy>=1.16.3',
         'scipy>=1.2.1',
-        'pysam>=0.15.2',
+        'pysam==0.15.4',
         'intervaltree>=3.0.2',
     ],
 

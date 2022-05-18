@@ -38,7 +38,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
             if barcode in ts.barcode_read_indices:
                 _rows = ts.barcode_read_indices[barcode]
                 ''' Create likelihood object using only reads from the cell '''
-                _cell_raw_scores = csr_matrix(ts.raw_scores[_rows,:].copy())
+                _cell_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
                 ts_model = TelescopeLikelihood(_cell_raw_scores, ts.opts)
                 ''' Run EM '''
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
@@ -75,17 +75,11 @@ class StellarscopeAssignOptions(utils.OptionsBase):
     """
     import command options
     """
-    OPTS = pkgutil.get_data('telescope', 'cmdopts/stellarscope_assign.yaml')
+    OPTS = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_assign.yaml')
 
     def __init__(self, args):
-        super().__init__(args)
 
-        if self.pooling_mode == 'celltype':
-            if self.celltypefile is None:
-                raise ValueError('Pooling mode of "celltype" was specified but no cell type file provided.')
-        elif self.celltypefile is not None:
-            lg.info(f'Argument "celltypefile" provided but pooling_mode={self.pooling_mode}, '
-                    f'not using provided cell type file')
+        super().__init__(args)
 
         if hasattr(self, 'tempdir') and self.tempdir is None:
             if hasattr(self, 'ncpu') and self.ncpu > 1:
@@ -109,6 +103,13 @@ def run(args):
     opts = option_class(args)
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
+
+    if opts.pooling_mode == 'celltype':
+        if opts.celltypefile is None:
+            raise ValueError('Pooling mode of "celltype" was specified but no cell type file provided.')
+    elif opts.celltypefile is not None:
+        lg.info(f'Argument celltypefile not being used, because pooling_mode={opts.pooling_mode}')
+
     total_time = time()
 
     ''' Create Telescope object '''

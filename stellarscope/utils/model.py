@@ -235,8 +235,7 @@ class Telescope(object):
 
             if self.opts.celltypefile is not None:
                 with open(self.opts.celltypefile) as celltype_file:
-                    _barcode_celltypes = [(bc, celltype) for line in celltype_file.readlines()
-                                          for bc, celltype in line.split()[:2]]
+                    _barcode_celltypes = [tuple(line.split()[:2]) for line in celltype_file.readlines()]
                 self.barcode_celltypes = pd.DataFrame(_barcode_celltypes, columns=['barcode', 'celltype'])
 
             _all_read_barcodes = []

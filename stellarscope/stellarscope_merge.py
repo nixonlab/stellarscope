@@ -24,7 +24,7 @@ __copyright__ = "Copyright (C) 2021 Matthew L. Bendall"
 class StellarscopeMergeOptions(utils.OptionsBase):
 
     # import command options from the yaml file
-    OPTS = pkgutil.get_data('telescope', 'cmdopts/stellarscope_merge.yaml')
+    OPTS = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_merge.yaml')
 
     def __init__(self, args):
         super().__init__(args)
