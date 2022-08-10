@@ -18,6 +18,7 @@ import shutil
 import pkgutil
 
 import numpy as np
+from scipy.sparse import lil_matrix
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
@@ -33,7 +34,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
 
     if pooling_mode == 'individual':
         ''' Initialise the z matrix for all reads '''
-        z = ts.raw_scores.copy()
+        z = lil_matrix(ts.raw_scores)
         for barcode in ts.barcodes:
             if barcode in ts.barcode_read_indices:
                 _rows = ts.barcode_read_indices[barcode]
@@ -43,16 +44,16 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 ''' Run EM '''
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
                 ''' Add estimated posterior probs to the final z matrix '''
-                z[_rows, :] = ts_model.z
+                z[_rows, :] = ts_model.z.tolil()
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
-        ts_model.z = z
+        ts_model.z = z.tocsr()
     elif pooling_mode == 'pseudobulk':
         ''' Create likelihood '''
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ''' Run Expectation-Maximization '''
         ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
     elif pooling_mode == 'celltype':
-        z = ts.raw_scores.copy()
+        z = lil_matrix(ts.raw_scores)
         for celltype, df in ts.barcode_celltypes.groupby('celltype'):
             celltype_barcodes = set(df['barcode']).intersection(ts.barcodes)
             if celltype_barcodes:
@@ -63,9 +64,9 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 ''' Run EM '''
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
                 ''' Add estimated posterior probs to the final z matrix '''
-                z[_rows, :] = ts_model.z
+                z[_rows, :] = ts_model.z.tolil()
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
-        ts_model.z = z
+        ts_model.z = z.tocsr()
     else:
         raise ValueError('Argument "pooling_mode" should be one of (individual, pseudobulk, celltype)')
 
