@@ -46,7 +46,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 ''' Add estimated posterior probs to the final z matrix '''
                 z[_rows, :] = ts_model.z.tolil()
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
-        ts_model.z = z.tocsr()
+        ts_model.z = csr_matrix(z)
     elif pooling_mode == 'pseudobulk':
         ''' Create likelihood '''
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
@@ -66,7 +66,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 ''' Add estimated posterior probs to the final z matrix '''
                 z[_rows, :] = ts_model.z.tolil()
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
-        ts_model.z = z.tocsr()
+        ts_model.z = csr_matrix(z)
     else:
         raise ValueError('Argument "pooling_mode" should be one of (individual, pseudobulk, celltype)')
 
@@ -90,6 +90,7 @@ class StellarscopeAssignOptions(utils.OptionsBase):
     def outfile_path(self, suffix):
         basename = '%s-%s' % (self.exp_tag, suffix)
         return os.path.join(self.outdir, basename)
+
 
 def run(args):
     """
