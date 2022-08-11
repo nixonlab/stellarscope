@@ -34,7 +34,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
 
     if pooling_mode == 'individual':
         ''' Initialise the z matrix for all reads '''
-        z = lil_matrix(ts.raw_scores)
+        z = lil_matrix(ts.raw_scores, dtype=np.float64)
         for barcode in ts.barcodes:
             if barcode in ts.barcode_read_indices:
                 _rows = ts.barcode_read_indices[barcode]
@@ -53,7 +53,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
         ''' Run Expectation-Maximization '''
         ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
     elif pooling_mode == 'celltype':
-        z = lil_matrix(ts.raw_scores)
+        z = lil_matrix(ts.raw_scores, dtype=np.float64)
         for celltype, df in ts.barcode_celltypes.groupby('celltype'):
             celltype_barcodes = set(df['barcode']).intersection(ts.barcodes)
             if celltype_barcodes:
