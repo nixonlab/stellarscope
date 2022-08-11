@@ -235,7 +235,7 @@ class Telescope(object):
 
             if self.opts.celltypefile is not None:
                 with open(self.opts.celltypefile) as celltype_file:
-                    _barcode_celltypes = [tuple(line.split('\t')[:2]) for line in celltype_file.readlines()]
+                    _barcode_celltypes = [tuple(map(str.strip, line.split('\t')[:2])) for line in celltype_file.readlines()]
                 lg.info(f'{len(set(_[1] for _ in _barcode_celltypes))} unique celltypes found in celltypes file.')
                 self.barcode_celltypes = pd.DataFrame(_barcode_celltypes, columns=['barcode', 'celltype'])
 
