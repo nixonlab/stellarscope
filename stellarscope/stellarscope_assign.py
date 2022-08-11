@@ -62,6 +62,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 _celltype_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
                 ts_model = TelescopeLikelihood(_celltype_raw_scores, ts.opts)
                 ''' Run EM '''
+                lg.info("Running EM for {}".format(celltype))
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
                 ''' Add estimated posterior probs to the final z matrix '''
                 z[_rows, :] = ts_model.z.tolil()

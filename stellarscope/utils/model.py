@@ -781,8 +781,8 @@ class TelescopeLikelihood(object):
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
 
 
-        lg.log(loglev, 'EM {:s} after {:d} iterations.'.format(_con, inum))
-        lg.log(loglev, 'Final log-likelihood: {:f}.'.format(self.lnl))
+        lg.log(loglev+10, 'EM {:s} after {:d} iterations.'.format(_con, inum))
+        lg.log(loglev+10, 'Final log-likelihood: {:f}.'.format(self.lnl))
         return
 
     def reassign(self, method, thresh=0.9, initial=False):
