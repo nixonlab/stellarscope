@@ -73,7 +73,6 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
         ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
 
     elif pooling_mode == 'celltype':
-
         celltype_count_matrices = []
         row_order = []
         for celltype, df in ts.barcode_celltypes.groupby('celltype'):
@@ -90,6 +89,7 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
                 ts_model = TelescopeLikelihood(_celltype_raw_scores, ts.opts)
 
                 ''' Run EM '''
+                lg.info("Running EM for {}".format(celltype))
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
                 ''' Add estimated posterior probs to the final z matrix '''
                 celltype_count_matrices.append(ts_model.z.copy())

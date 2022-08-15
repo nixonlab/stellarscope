@@ -235,7 +235,8 @@ class Telescope(object):
 
             if self.opts.celltypefile is not None:
                 with open(self.opts.celltypefile) as celltype_file:
-                    _barcode_celltypes = [tuple(line.split()[:2]) for line in celltype_file.readlines()]
+                    _barcode_celltypes = [tuple(map(str.strip, line.split('\t')[:2])) for line in celltype_file.readlines()]
+                lg.info(f'{len(set(_[1] for _ in _barcode_celltypes))} unique celltypes found in celltypes file.')
                 self.barcode_celltypes = pd.DataFrame(_barcode_celltypes, columns=['barcode', 'celltype'])
 
             _all_read_barcodes = []
@@ -780,8 +781,8 @@ class TelescopeLikelihood(object):
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
 
 
-        lg.log(loglev, 'EM {:s} after {:d} iterations.'.format(_con, inum))
-        lg.log(loglev, 'Final log-likelihood: {:f}.'.format(self.lnl))
+        lg.log(loglev+10, 'EM {:s} after {:d} iterations.'.format(_con, inum))
+        lg.log(loglev+10, 'Final log-likelihood: {:f}.'.format(self.lnl))
         return
 
     def reassign(self, method, thresh=0.9, initial=False):
