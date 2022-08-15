@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+""" Stellarscope model class
+"""
+
 import pandas as pd
 import scipy
 import warnings
@@ -6,6 +10,10 @@ from scipy import io
 from collections import defaultdict, OrderedDict
 
 from .model import Telescope
+from ..utils.helpers import dump_data
+
+__author__ = 'Matthew Greenig'
+__copyright__ = "Copyright (C) 2022, Matthew Greenig"
 
 
 class Stellarscope(Telescope):
@@ -82,6 +90,9 @@ class Stellarscope(Telescope):
             counts_outfile = f'{counts_filename[:counts_filename.rfind(".")]}_{_method}.mtx'
 
             _assignments = tl.reassign(_method, _rprob)
+            if self.opts.devmode:
+                dump_data(self.opts.outfile_path('assignments_%s' % _method),
+                          _assignments)
             _assignments_lil = _assignments.tolil()
             _cell_count_matrix = scipy.sparse.lil_matrix((len(_allbc), _assignments.shape[1]))
 

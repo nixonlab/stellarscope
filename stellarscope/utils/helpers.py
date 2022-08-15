@@ -5,7 +5,9 @@ from __future__ import division
 
 from past.utils import old_div
 import numpy as np
+import scipy
 from itertools import zip_longest
+import logging as lg
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
@@ -154,3 +156,17 @@ def str2int(s):
             return float(s)
         except ValueError:
             return s
+
+
+def dump_data(fn, obj, save_npz=True, save_txt=True):
+    if isinstance(obj, scipy.sparse.spmatrix):
+        M = obj.tocoo()
+        if save_npz:
+            scipy.sparse.save_npz(fn + '.npz', M)
+            lg.info("data to outfile: %s" % fn + '.npz')
+        if save_txt:
+            tups = sorted(zip(M.row, M.col, M.data))
+            with open(fn + '.txt', 'w') as outh:
+                print('\n'.join('\t'.join(map(str, _)) for _ in tups),
+                      file=outh)
+            lg.info("data to outfile: %s" % fn + '.txt')

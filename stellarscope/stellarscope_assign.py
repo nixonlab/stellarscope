@@ -18,11 +18,11 @@ import shutil
 import pkgutil
 
 import numpy as np
-import scipy
 from scipy.sparse import lil_matrix, eye, vstack
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
+from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
 from .utils.model_stellarscope import Stellarscope
 from .utils.annotation import get_annotation_class
@@ -113,20 +113,6 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         raise ValueError('Argument "pooling_mode" should be one of (individual, pseudobulk, celltype)')
 
     return ts_model
-
-
-def dump_data(fn, obj, save_npz=True, save_txt=True):
-    if isinstance(obj, scipy.sparse.spmatrix):
-        M = obj.tocoo()
-        if save_npz:
-            scipy.sparse.save_npz(fn + '.npz', M)
-            lg.info("data to outfile: %s" % fn + '.npz')
-        if save_txt:
-            tups = sorted(zip(M.row, M.col, M.data))
-            with open(fn + '.txt', 'w') as outh:
-                print('\n'.join('\t'.join(map(str, _)) for _ in tups),
-                      file=outh)
-            lg.info("data to outfile: %s" % fn + '.txt')
 
 
 class StellarscopeAssignOptions(utils.OptionsBase):
