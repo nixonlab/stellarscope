@@ -46,7 +46,10 @@
         help: Silence (most) output.
     - debug:
         action: store_true
-        help: Print debug messages.
+        help: Print verbose debug messages.
+    - devmode:
+        action: store_true
+        help: Print verbose debug messages and internal data.
     - logfile:
         type: argparse.FileType('r')
         help: Log output to this file.

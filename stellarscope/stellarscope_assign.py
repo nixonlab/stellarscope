@@ -18,6 +18,7 @@ import shutil
 import pkgutil
 
 import numpy as np
+import scipy
 from scipy.sparse import lil_matrix, eye, vstack
 
 from . import utils
@@ -45,9 +46,17 @@ def permute_csr_rows(M, row_order):
     return new_M
 
 
-def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelihood:
+def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
+    """
 
-    if pooling_mode == 'individual':
+    Args:
+        ts:
+        opts:
+
+    Returns:
+
+    """
+    if opts.pooling_mode == 'individual':
 
         ''' Initialise the z matrix for all reads '''
         z = lil_matrix(ts.raw_scores, dtype=np.float64)
@@ -65,14 +74,14 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ts_model.z = csr_matrix(z)
 
-    elif pooling_mode == 'pseudobulk':
+    elif opts.pooling_mode == 'pseudobulk':
 
         ''' Create likelihood '''
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ''' Run Expectation-Maximization '''
         ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
 
-    elif pooling_mode == 'celltype':
+    elif opts.pooling_mode == 'celltype':
         celltype_count_matrices = []
         row_order = []
         for celltype, df in ts.barcode_celltypes.groupby('celltype'):
@@ -104,6 +113,20 @@ def fit_telescope_model(ts: Stellarscope, pooling_mode: str) -> TelescopeLikelih
         raise ValueError('Argument "pooling_mode" should be one of (individual, pseudobulk, celltype)')
 
     return ts_model
+
+
+def dump_data(fn, obj, save_npz=True, save_txt=True):
+    if isinstance(obj, scipy.sparse.spmatrix):
+        M = obj.tocoo()
+        if save_npz:
+            scipy.sparse.save_npz(fn + '.npz', M)
+            lg.info("data to outfile: %s" % fn + '.npz')
+        if save_txt:
+            tups = sorted(zip(M.row, M.col, M.data))
+            with open(fn + '.txt', 'w') as outh:
+                print('\n'.join('\t'.join(map(str, _)) for _ in tups),
+                      file=outh)
+            lg.info("data to outfile: %s" % fn + '.txt')
 
 
 class StellarscopeAssignOptions(utils.OptionsBase):
@@ -190,8 +213,13 @@ def run(args):
 
     lg.info('Running Expectation-Maximization...')
     stime = time()
-    ts_model = fit_telescope_model(ts, opts.pooling_mode)
+    if opts.devmode:
+        dump_data(opts.outfile_path('rawscores_before_fit'), ts.raw_scores)
+    ts_model = fit_telescope_model(ts, opts)
     lg.info("EM completed in %s" % fmtmins(time() - stime))
+    if opts.devmode:
+        dump_data(opts.outfile_path('rawscores_after_fit'), ts.raw_scores)
+        dump_data(opts.outfile_path('probs_after_fit'), ts_model.z)
 
     # Output final report
     lg.info("Generating Report...")
