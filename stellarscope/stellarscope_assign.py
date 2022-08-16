@@ -18,7 +18,7 @@ import shutil
 import pkgutil
 
 import numpy as np
-from scipy.sparse import lil_matrix, eye, vstack
+from scipy.sparse import lil_matrix, eye, vstack, coo_matrix
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
@@ -82,7 +82,7 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
 
     elif opts.pooling_mode == 'celltype':
-        celltype_count_matrices = []
+        celltype_z_list = []
         row_order = []
         for celltype, df in ts.barcode_celltypes.groupby('celltype'):
 
@@ -91,23 +91,39 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
             if celltype_barcodes:
 
                 _rows = np.unique(np.concatenate([ts.barcode_read_indices[bc] for bc in celltype_barcodes]))
-                row_order.extend(_rows.tolist())
+
+                # celltype identity matrix with 1 where row belongs to celltype
+                '''
+                Subset raw scores by multiplication with celltype identity 
+                matrix. Let the celltype identity matrix have M[i, 0] == 1 if 
+                row i is assigned to celltype, 0 otherwise.
+                '''
+                _celltype_identity = csr_matrix(coo_matrix(
+                    ([1]*len(_rows), (_rows, [0]*len(_rows))),
+                    shape = (ts.raw_scores.shape[0], 1),
+                    dtype = np.uint8
+                ))
+
+                _celltype_raw_scores = csr_matrix(ts.raw_scores.multiply(_celltype_identity))
+
 
                 ''' Create likelihood object using only reads from the celltype '''
-                _celltype_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
+                # _celltype_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
                 ts_model = TelescopeLikelihood(_celltype_raw_scores, ts.opts)
 
                 ''' Run EM '''
                 lg.info("Running EM for {}".format(celltype))
                 ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
                 ''' Add estimated posterior probs to the final z matrix '''
-                celltype_count_matrices.append(ts_model.z.copy())
+                celltype_z_list.append(ts_model.z.copy())
 
-        all_celltypes_z = vstack(celltype_count_matrices, format='csr')
-        sorted_z = permute_csr_rows(all_celltypes_z, row_order)
+        all_celltypes_z = csr_matrix(ts.raw_scores.shape, dtype=np.float64)
+        for ctz in celltype_z_list:
+            all_celltypes_z = all_celltypes_z + ctz
+        dump_data(opts.outfile_path('all_celltypes_z'), all_celltypes_z)
 
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
-        ts_model.z = sorted_z
+        ts_model.z = all_celltypes_z
 
     else:
         raise ValueError('Argument "pooling_mode" should be one of (individual, pseudobulk, celltype)')
