@@ -9,7 +9,7 @@ from distutils.core import setup
 from setuptools import Extension
 from setuptools import find_packages
 
-from stellarscope._version import VERSION
+import versioneer
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
@@ -40,7 +40,7 @@ if USE_CYTHON:
 
 setup(
     name='stellarscope',
-    version=VERSION.split('+')[0],
+    version = versioneer.get_version(),
     packages=find_packages(),
 
     install_requires=[

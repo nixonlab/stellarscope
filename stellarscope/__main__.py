@@ -10,14 +10,14 @@ import os
 import argparse
 import errno
 
-from ._version import VERSION
+from stellarscope import __version__
 from . import stellarscope_cellsort
 from . import stellarscope_assign
 from . import stellarscope_merge
 from . import stellarscope_resume
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2021 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
 
 def generate_test_command(args, singlecell = False):
     try:
@@ -72,8 +72,8 @@ def stellarscope():
 
     parser.add_argument('--version',
         action='version',
-        version=VERSION,
-        default=VERSION,
+        version=__version__,
+        default=__version__,
     )
 
     subparsers = parser.add_subparsers(help='sub-command help')
