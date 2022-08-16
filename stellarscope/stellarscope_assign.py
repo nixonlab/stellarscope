@@ -24,7 +24,7 @@ from . import utils
 from .utils.helpers import format_minutes as fmtmins
 from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
-from .utils.model_stellarscope import Stellarscope
+from .utils.model_stellarscope import Stellarscope, StellarscopeError
 from .utils.annotation import get_annotation_class
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 
@@ -120,7 +120,9 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         all_celltypes_z = csr_matrix(ts.raw_scores.shape, dtype=np.float64)
         for ctz in celltype_z_list:
             all_celltypes_z = all_celltypes_z + ctz
-        dump_data(opts.outfile_path('all_celltypes_z'), all_celltypes_z)
+
+        if opts.devmode:
+            dump_data(opts.outfile_path('all_celltypes_z'), all_celltypes_z)
 
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ts_model.z = all_celltypes_z
@@ -165,11 +167,14 @@ def run(args):
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
 
-    if opts.pooling_mode == 'celltype':
-        if opts.celltypefile is None:
-            raise ValueError('Pooling mode of "celltype" was specified but no cell type file provided.')
-    elif opts.celltypefile is not None:
-        lg.info(f'Argument celltypefile not being used, because pooling_mode={opts.pooling_mode}')
+    lg.info(f'Using pooling mode: {opts.pooling_mode}')
+
+    if opts.pooling_mode == 'celltype' and opts.celltype_tsv is None:
+        msg = 'celltype_tsv is required for pooling mode "celltype"'
+        raise StellarscopeError(msg)
+    if opts.pooling_mode != 'celltype' and opts.celltype_tsv:
+        msg = f'celltype_tsv is ignored for pooling mode "{opts.pooling_mode}"'
+        lg.info(msg)
 
     total_time = time()
 
@@ -225,11 +230,12 @@ def run(args):
 
     # Output final report
     lg.info("Generating Report...")
-    ts.output_report(ts_model,
-                     opts.outfile_path('run_stats.tsv'),
-                     opts.outfile_path('TE_counts.mtx'),
-                     opts.outfile_path('barcodes.tsv'),
-                     opts.outfile_path('features.tsv'))
+    # ts.output_report(ts_model,
+    #                  opts.outfile_path('run_stats.tsv'),
+    #                  opts.outfile_path('TE_counts.mtx'),
+    #                  opts.outfile_path('barcodes.tsv'),
+    #                  opts.outfile_path('features.tsv'))
+    ts.output_report(ts_model)
 
     if opts.updated_sam:
         lg.info("Creating updated SAM file...")

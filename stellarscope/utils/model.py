@@ -227,18 +227,6 @@ class Telescope(object):
         assign = Assigner(annotation, _nfkey, _omode, _othresh, self.opts).assign_func()
 
         if self.single_cell:
-
-            if self.opts.barcodefile is not None:
-                with open(self.opts.barcodefile) as barcode_file:
-                    _file_barcodes = set([bc.strip('\n') for bc in barcode_file.readlines()])
-                lg.info(f'{len(_file_barcodes)} unique barcodes found in barcodes file.')
-
-            if self.opts.celltypefile is not None:
-                with open(self.opts.celltypefile) as celltype_file:
-                    _barcode_celltypes = [tuple(map(str.strip, line.split('\t')[:2])) for line in celltype_file.readlines()]
-                lg.info(f'{len(set(_[1] for _ in _barcode_celltypes))} unique celltypes found in celltypes file.')
-                self.barcode_celltypes = pd.DataFrame(_barcode_celltypes, columns=['barcode', 'celltype'])
-
             _all_read_barcodes = []
 
         """ Load unsorted reads """
@@ -310,8 +298,8 @@ class Telescope(object):
 
         if self.single_cell:
             _unique_read_barcodes = set(_all_read_barcodes)
-            if self.opts.barcodefile is not None:
-                self.barcodes = list(_unique_read_barcodes.intersection(_file_barcodes))
+            if self.whitelist is not None:
+                self.barcodes = list(_unique_read_barcodes.intersection(self.whitelist))
                 lg.info(f'{len(_unique_read_barcodes)} unique barcodes found in the alignment file, '
                         f'{len(self.barcodes)} of which were also found in the barcode file.')
             else:

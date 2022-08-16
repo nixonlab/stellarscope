@@ -2,6 +2,9 @@
 """ Stellarscope model class
 """
 
+import re
+import logging as lg
+
 import pandas as pd
 import scipy
 import warnings
@@ -15,6 +18,8 @@ from ..utils.helpers import dump_data
 __author__ = 'Matthew Greenig'
 __copyright__ = "Copyright (C) 2022, Matthew Greenig"
 
+class StellarscopeError(Exception):
+    pass
 
 class Stellarscope(Telescope):
 
@@ -22,12 +27,90 @@ class Stellarscope(Telescope):
 
         super().__init__(opts)
         self.single_cell = True
+
         self.mapped_read_barcodes = {}  # Dictionary for storing alignment ids mapped to barcodes
         self.mapped_read_umis = {}  # Dictionary for storing alignment ids mapped to UMIs
         self.barcode_read_indices = defaultdict(list)  # Dictionary for storing barcodes mapped to read indices
         self.barcode_umis = defaultdict(list)  # Dictionary for storing barcodes mapped to UMIs
 
-    def output_report(self, tl, stats_filename, counts_filename, barcodes_filename, features_filename):
+        self.whitelist = self._load_whitelist()
+        if self.whitelist:
+            lg.info(f'{len(self.whitelist)} barcodes found in whitelist.')
+        else:
+            lg.info('No whitelist provided.')
+
+        if opts.pooling_mode == 'celltype':
+            self.celltype_map = self._load_celltype_file()
+            self.celltypes = sorted(set(self.celltype_map.values()))
+            self.barcode_celltypes = pd.DataFrame({
+                'barcode': self.celltype_map.keys(),
+                'celltype': self.celltype_map.values()
+            })
+            lg.info(f'{len(self.celltypes)} unique celltypes found.')
+        else:
+            self.celltype_map = None
+            self.celltypes = None
+            self.barcode_celltypes = None
+
+        return
+
+
+    def _load_whitelist(self):
+        if not self.opts.whitelist:
+            return None
+
+        _ret = {}
+        with open(self.opts.whitelist, 'r') as fh:
+            _bc_gen = (l.split('\t')[0].strip() for l in fh)
+            # Check first line is valid barcode and not column header
+            _bc = next(_bc_gen)
+            if re.match('^[ACGTacgt]+$', _bc):
+                _ = _ret.setdefault(_bc, len(_ret))
+            # Add the rest without checking
+            for _bc in _bc_gen:
+                _ = _ret.setdefault(_bc, len(_ret))
+        return _ret
+
+    def _load_celltype_file(self):
+        if not self.opts.celltype_tsv:
+            return None
+
+        _ret = {}
+        with open(self.opts.celltype_tsv, 'r') as fh:
+            _ct_gen = (tuple(map(str.strip, l.split('\t')[:2])) for l in fh)
+            # Check first line is valid barcode and not column header
+            _bc, _ct = next(_ct_gen)
+            if re.match('^[ACGTacgt]+$', _bc):
+                _ = _ret.setdefault(_bc, _ct)
+            # Add the rest without checking
+            for _bc, _ct in _ct_gen:
+                _ = _ret.setdefault(_bc, _ct)
+                assert _ == _ct, f'Cell type mismatch for {_bc}, "{_}" != "{_ct}"'
+        return _ret
+
+
+
+    def output_report(self, tl: 'TelescopeLikelihood'):
+        """
+
+        Args:
+            tl:
+
+        Returns:
+
+        """
+        _rmethod = self.opts.reassign_mode
+        _rprob = self.opts.conf_prob
+        _fnames = sorted(self.feat_index, key=self.feat_index.get)
+        _flens = self.feature_length
+
+
+
+
+
+
+
+    def output_report_old(self, tl, stats_filename, counts_filename, barcodes_filename, features_filename):
 
         _rmethod, _rprob = self.opts.reassign_mode, self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
