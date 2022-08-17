@@ -204,6 +204,10 @@ def row_identity_matrix(selected, nrows):
     _data = [1] * _nnz
     _i = selected
     _j = [0] * _nnz
-    _M = coo_matrix((_data, (_i, _j)), shape=(nrows, 1), dtype=np.uint8)
+    _M = scipy.sparse.coo_matrix(
+        (_data, (_i, _j)),
+        shape=(nrows, 1),
+        dtype=np.uint8
+    )
     return csr_matrix_plus(_M)
 
