@@ -27,6 +27,7 @@ from .utils.model import TelescopeLikelihood
 from .utils.model_stellarscope import Stellarscope, StellarscopeError
 from .utils.annotation import get_annotation_class
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
+from .utils.sparse_plus import row_identity_matrix
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2021 Matthew L. Bendall"
@@ -95,16 +96,11 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
                 # celltype identity matrix with 1 where row belongs to celltype
                 '''
                 Subset raw scores by multiplication with celltype identity 
-                matrix. Let the celltype identity matrix have M[i, 0] == 1 if 
+                matrix. Let the celltype identity matrix have I[i, 0] == 1 if 
                 row i is assigned to celltype, 0 otherwise.
                 '''
-                _celltype_identity = csr_matrix(coo_matrix(
-                    ([1]*len(_rows), (_rows, [0]*len(_rows))),
-                    shape = (ts.raw_scores.shape[0], 1),
-                    dtype = np.uint8
-                ))
-
-                _celltype_raw_scores = csr_matrix(ts.raw_scores.multiply(_celltype_identity))
+                _I = row_identity_matrix(_rows, ts.raw_scores.shape[0])
+                _celltype_raw_scores = ts.raw_scores.multiply(_I)
 
 
                 ''' Create likelihood object using only reads from the celltype '''
