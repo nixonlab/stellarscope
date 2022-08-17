@@ -48,11 +48,11 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
 
     def _norm(self, axis=None):
         if axis is None:
-            return type(self)(self.multiply(1. / self.sum()))
+            return self.multiply(1. / self.sum())
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
-            return type(self)(self.multiply(_recip0(self.sum(1))))
+            return self.multiply(_recip0(self.sum(1)))
 
     def _norm_loop(self, axis=None):
         if axis is None:
@@ -91,13 +91,13 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
 
     def _scale(self, axis=None):
         if axis is None:
-            return type(self)(self.multiply(1. / self.max()))
+            return self.multiply(1. / self.max())
             # ret = self.copy().astype(np.float)
             # return ret / ret.max()
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
-            return type(self)(self.multiply(_recip0(self.max(1).toarray())))
+            return self.multiply(_recip0(self.max(1).toarray()))
 
     def binmax(self, axis=None):
         """ Set max values to 1 and others to 0
@@ -166,6 +166,9 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         ret.data = np.fromiter((func(v) for v in self.data),
                                self.data.dtype, count=len(self.data))
         return ret
+
+    def multiply(self, other):
+        return type(self)(super().multiply(other))
 
     def save(self, filename):
         np.savez(filename, data=self.data, indices=self.indices,

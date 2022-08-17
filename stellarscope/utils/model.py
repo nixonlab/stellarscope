@@ -683,9 +683,9 @@ class TelescopeLikelihood(object):
         #     else:
         #         _n.data[d_start:d_end] *= pi[_cidx]
         # Newer way
-        _amb = csr_matrix(self.Q.multiply(self.Y)).multiply(pi * theta)
-        _uni = csr_matrix(self.Q.multiply(1 - self.Y)).multiply(pi)
-        _n = csr_matrix(_amb + _uni)
+        _amb = self.Q.multiply(self.Y).multiply(pi * theta)
+        _uni = self.Q.multiply(1 - self.Y).multiply(pi)
+        _n = _amb + _uni
 
         return _n.norm(1)
 
@@ -720,8 +720,8 @@ class TelescopeLikelihood(object):
         #     else:
         #         _inner.data[d_start:d_end] *= pi[_cidx]
         #
-        _amb = csr_matrix(self.Q.multiply(self.Y)).multiply(pi * theta)
-        _uni = csr_matrix(self.Q.multiply(1 - self.Y)).multiply(pi)
+        _amb = self.Q.multiply(self.Y).multiply(pi * theta)
+        _uni = self.Q.multiply(1 - self.Y).multiply(pi)
         _inner = csr_matrix(_amb + _uni)
         cur = z.multiply(_inner.log1p()).sum()
         lg.debug('completed lnl')
