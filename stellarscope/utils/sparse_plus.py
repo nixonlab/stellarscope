@@ -21,6 +21,9 @@ def _recip0(v):
     np.seterr(**old_settings)
     return ret
 
+
+
+
 class csr_matrix_plus(scipy.sparse.csr_matrix):
 
     def norm(self, axis=None):
@@ -172,3 +175,35 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         loader = np.load(filename)
         return cls((loader['data'], loader['indices'], loader['indptr']),
                    shape = loader['shape'])
+
+
+def row_identity_matrix(selected, nrows):
+    """ Create identity matrix from list of selected rows
+
+    The identity matrix I is a matrix of shape = (nrows, 1) where I[i, 0] = 1
+    if the row is selected (i ∈ selected) and I[i, 0] = 0 otherwise.
+
+    The identity matrix is useful for efficiently subsetting sparse matrices.
+    For example, M.multiply(I) returns a sparse matrix with the same shape
+    as M with rows not in `selected` set to 0.
+
+    The matrix is created by first constructing a sparse matrix in COOrdinate
+    format (coo_matrix) using the constructor:
+
+        `coo_matrix((data, (i, j)), [shape=(M, N)])`
+
+    Args:
+        selected:
+        nrows:
+
+    Returns:
+        csr_matrix_plus: Sparse matrix with shape = (nrows, 1)
+
+    """
+    _nnz = len(selected)
+    _data = [1] * _nnz
+    _i = selected
+    _j = [0] * _nnz
+    _M = coo_matrix((_data, (_i, _j)), shape=(nrows, 1), dtype=np.uint8)
+    return csr_matrix_plus(_M)
+
