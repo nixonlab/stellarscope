@@ -97,7 +97,9 @@ class Telescope(object):
         # Set the version
         self.run_info['version'] = self.opts.version
 
+        _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
+            pysam.set_verbosity(_pysam_verbosity)
             self.has_index = sf.has_index()
             if self.has_index:
                 self.run_info['nmap_idx'] = sf.mapped
@@ -231,7 +233,9 @@ class Telescope(object):
 
         """ Load unsorted reads """
         alninfo = Counter()
+        _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
+            pysam.set_verbosity(_pysam_verbosity)
             # Create output temporary files
             if _update_sam:
                 bam_u = pysam.AlignmentFile(self.other_bam, 'wb', template=sf)
@@ -517,7 +521,9 @@ class Telescope(object):
         mat = csr_matrix(tl.reassign(_rmethod, _rprob))
         # best_feats = {i: _fnames for i, j in zip(*mat.nonzero())}
 
+        _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.tmp_bam, check_sq=False) as sf:
+            pysam.set_verbosity(_pysam_verbosity)
             header = sf.header
             header['PG'].append({
                 'PN': 'telescope', 'ID': 'telescope',
