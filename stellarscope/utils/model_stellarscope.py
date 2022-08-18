@@ -5,15 +5,18 @@
 import re
 import logging as lg
 
+import numpy as np
 import pandas as pd
 import scipy
 import warnings
 from scipy.sparse import SparseEfficiencyWarning
 from scipy import io
+from scipy.sparse import lil_matrix
 from collections import defaultdict, OrderedDict
 
 from .model import Telescope
 from ..utils.helpers import dump_data
+from ..utils.sparse_plus import row_identity_matrix
 
 __author__ = 'Matthew Greenig'
 __copyright__ = "Copyright (C) 2022, Matthew Greenig"
@@ -26,12 +29,33 @@ class Stellarscope(Telescope):
     def __init__(self, opts):
 
         super().__init__(opts)
+        '''
+        NOTE: Telescope() initializes the following instance variables:
+            self.opts = opts               # Command line options
+            self.run_info = OrderedDict()  # Information about the run
+            self.feature_length = None     # Lengths of features
+            self.read_index = {}           # {"fragment name": row_index}
+            self.feat_index = {}           # {"feature_name": column_index}
+            self.shape = None              # Fragments x Features
+            self.raw_scores = None         # Initial alignment scores
+            
+            # BAM with non overlapping fragments (or unmapped)
+            self.other_bam = opts.outfile_path('other.bam')
+            # BAM with overlapping fragments
+            self.tmp_bam = opts.outfile_path('tmp_tele.bam')
+            
+            # about the SAM/BAM input file
+            self.has_index = sf.has_index()
+            self.ref_names = sf.references
+            self.ref_lengths = sf.lengths
+
+        '''
         self.single_cell = True
 
-        self.mapped_read_barcodes = {}  # Dictionary for storing alignment ids mapped to barcodes
-        self.mapped_read_umis = {}  # Dictionary for storing alignment ids mapped to UMIs
-        self.barcode_read_indices = defaultdict(list)  # Dictionary for storing barcodes mapped to read indices
-        self.barcode_umis = defaultdict(list)  # Dictionary for storing barcodes mapped to UMIs
+        self.read_bcode_map = {}  # Dictionary for storing alignment ids mapped to barcodes
+        self.read_umi_map = {}  # Dictionary for storing alignment ids mapped to UMIs
+        self.bcode_ridx_map = defaultdict(list)  # Dictionary for storing barcodes mapped to read indices
+        self.bcode_umi_map = defaultdict(list)  # Dictionary for storing barcodes mapped to UMIs
 
         self.whitelist = self._load_whitelist()
         if self.whitelist:
@@ -87,8 +111,29 @@ class Stellarscope(Telescope):
                 _ = _ret.setdefault(_bc, _ct)
                 assert _ == _ct, f'Cell type mismatch for {_bc}, "{_}" != "{_ct}"'
         return _ret
+    def _store_read_info(self, read_id, barcode, umi):
+        self.read_bcode_map[read_id] = barcode
+        self.read_umi_map[read_id] = umi
+        return
 
+    def save(self, filename):
+        """ Save Stellarscope object to file
 
+        Args:
+            filename:
+
+        Returns:
+            True is save is successful, False otherwise
+
+        """
+        return True
+
+    @classmethod
+    def load(cls, filename):
+        loader = np.load(filename)
+        obj = cls.__new__(cls)
+        ''' TODO: Copy data from loader into obj'''
+        return obj
 
     def output_report(self, tl: 'TelescopeLikelihood'):
         """
@@ -103,6 +148,50 @@ class Stellarscope(Telescope):
         _rprob = self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
+
+        ''' Write cell barcodes to tsv '''
+        _bc_tsv = self.opts.outfile_path('barcodes.tsv')
+        if self.whitelist:
+            _bc_list = sorted(self.whitelist, key=self.whitelist.get)
+        else:
+            _bc_list = self.barcodes
+        with open(_bc_tsv, 'w') as outh:
+            print('\n'.join(_bc_list), file=outh)
+
+        ''' Write feature names to tsv '''
+        _ft_tsv = self.opts.outfile_path('features.tsv')
+        _ft_list = sorted(self.feat_index, key=self.feat_index.get)
+        with open(_ft_tsv, 'w') as outh:
+            print('\n'.join(_fnames), file=outh)
+
+        ''' Reassign reads '''
+        _assigned = tl.reassign('average', self.opts.conf_prob)
+
+        if self.opts.reassign_mode == 'average':
+            mtx_dtype = np.float64
+        else:
+            mtx_dtype = np.uint16
+
+        count_mtx = lil_matrix((len(_ft_list), len(_bc_list)), dtype=mtx_dtype)
+        all_cellsums = []
+
+        ''' Aggregate by barcode '''
+        _bcidx = OrderedDict(
+            {bcode: rows for bcode, rows in self.bcode_ridx_map.items()
+             if len(rows) > 0}
+        )
+
+        for _bc in _bc_list:
+            if _bc in _bcidx:
+                _rows = _bcidx[_bc]
+                _I = row_identity_matrix(_rows, _assigned.shape[0])
+                _assigned_cell = _assigned.multiply(_I)
+                _cellsums = _assigned_cell.sum(0)
+                all_cellsums.append(_cellsums)
+        ''' Deduplicate UMIs'''
+        lg.info('DEV IN PROGRESS')
+
+        return
 
 
 
@@ -155,10 +244,10 @@ class Stellarscope(Telescope):
         _methods = ['conf', 'all', 'unique', 'exclude', 'choose', 'average']
         _allbc = self.barcodes
         _bcidx = OrderedDict(
-            {bcode: rows for bcode, rows in self.barcode_read_indices.items() if len(rows) > 0}
+            {bcode: rows for bcode, rows in self.bcode_ridx_map.items() if len(rows) > 0}
         )
         _bcumi = OrderedDict(
-            {bcode: umis for bcode, umis in self.barcode_umis.items() if len(_bcidx[bcode]) > 0}
+            {bcode: umis for bcode, umis in self.bcode_umi_map.items() if len(_bcidx[bcode]) > 0}
         )
 
         ''' Write cell barcodes and feature names to a text file '''

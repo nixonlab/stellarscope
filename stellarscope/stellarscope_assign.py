@@ -62,8 +62,8 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         ''' Initialise the z matrix for all reads '''
         z = lil_matrix(ts.raw_scores, dtype=np.float64)
         for barcode in ts.barcodes:
-            if barcode in ts.barcode_read_indices:
-                _rows = ts.barcode_read_indices[barcode]
+            if barcode in ts.bcode_ridx_map:
+                _rows = ts.bcode_ridx_map[barcode]
                 ''' Create likelihood object using only reads from the cell '''
                 _cell_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
                 ts_model = TelescopeLikelihood(_cell_raw_scores, ts.opts)
@@ -91,7 +91,7 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
 
             if celltype_barcodes:
 
-                _rows = np.unique(np.concatenate([ts.barcode_read_indices[bc] for bc in celltype_barcodes]))
+                _rows = np.unique(np.concatenate([ts.bcode_ridx_map[bc] for bc in celltype_barcodes]))
 
                 # celltype identity matrix with 1 where row belongs to celltype
                 '''
@@ -174,7 +174,7 @@ def run(args):
 
     total_time = time()
 
-    ''' Create Telescope object '''
+    ''' Create Stellarscope object '''
     ts = Stellarscope(opts)
 
     ''' Load annotation '''

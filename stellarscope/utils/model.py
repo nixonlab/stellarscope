@@ -282,9 +282,11 @@ class Telescope(object):
                 ''' If running with single cell data, add cell tags to barcode/UMI trackers '''
                 if self.single_cell:
                     if self.opts.umi_tag in aln_tags and self.opts.barcode_tag in aln_tags:
-                        aln_id = alns[0].query_id
-                        self.mapped_read_barcodes[aln_id] = aln_tags.get(self.opts.barcode_tag)
-                        self.mapped_read_umis[aln_id] = aln_tags.get(self.opts.umi_tag)
+                        self._store_read_info(
+                            alns[0].query_id,
+                            aln_tags.get(self.opts.barcode_tag),
+                            aln_tags.get(self.opts.umi_tag)
+                        )
 
                 ''' Fragment overlaps with annotation '''
                 alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
@@ -340,10 +342,10 @@ class Telescope(object):
 
         ''' Map barcodes and UMIs to read indices '''
         if self.single_cell:
-            _bcidx = self.barcode_read_indices
-            _bcumi = self.barcode_umis
-            _rumi = self.mapped_read_umis
-            for rid, rbc in self.mapped_read_barcodes.items():
+            _bcidx = self.bcode_ridx_map
+            _bcumi = self.bcode_umi_map
+            _rumi = self.read_umi_map
+            for rid, rbc in self.read_bcode_map.items():
                 if rid in _ridx and rid in _rumi:
                     _bcidx[rbc].append(_ridx[rid])
                     _bcumi[rbc].append(_rumi[rid])
