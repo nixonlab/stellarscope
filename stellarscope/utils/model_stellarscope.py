@@ -318,3 +318,6 @@ class Stellarscope(Telescope):
 
             if _method == _rmethod:
                 io.mmwrite(counts_filename, _cell_count_matrix)
+
+
+raise BaseException('model_stellarscope.py is dead')
