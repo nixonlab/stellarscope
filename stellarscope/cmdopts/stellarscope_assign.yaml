@@ -14,16 +14,17 @@
               cell barcode in the first column).
     - celltype_tsv:
         type: str
-        help: Path to file of barcodes with associated cell types (tab-delimited file, one barcode/cell type per line).
-              Only necessary if using pooling_mode='celltype'.
+        help: Path to tab-delimited text file with celltype assignments, with
+              cell barcodes in first column and celltype string in column two.
+              Required if pooling_mode is 'celltype', ignored otherwise.
     - barcode_tag:
         type: str
         default: CB
-        help: Name of the field in the BAM/SAM file containing the barcode for each read.
+        help: SAM/BAM field containing the cell barcode.
     - umi_tag:
         type: str
         default: UB
-        help: Name of the field in the BAM/SAM file containing the UMI for each read.
+        help: SAM/BAM field containing the UMI.
     - attribute:
         default: locus
         help: GTF attribute that defines a transposable element locus. GTF
@@ -37,10 +38,12 @@
         default: 1
         type: int
         help: Number of cores to use. (Multiple cores not supported yet).
+        hide: True
     - tempdir:
         help: Path to temporary directory. Temporary files will be stored
               here. Default uses python tempfile package to create the
               temporary directory.
+        hide: True
 - Reporting Options:
     - quiet:
         action: store_true
@@ -145,6 +148,9 @@
               If None, for each feature in the annotation, returns counts for the positive strand and negative strand.
               If not None, specifies the orientation of paired end reads (RF - read 1 reverse strand, read 2 forward strand) and
               single end reads (F - forward strand).
+    - ignore_umi:
+        action: store_true
+        help: Do not perform UMI deduplication. Not recommended.
 - Model Parameters:
     - pi_prior:
         type: int

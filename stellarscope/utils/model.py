@@ -161,17 +161,16 @@ class Telescope(object):
         self.run_info['annotated_features'] = len(annotation.loci)
         self.feature_length = annotation.feature_length().copy()
 
-        # initialize feature index with features
+        ''' Initialize feature index with features '''
         self.feat_index = {self.opts.no_feature_key: 0, }
         for locus in annotation.loci.keys():
             self.feat_index.setdefault(locus, len(self.feat_index))
 
-        if self.opts.ncpu > 1:
-            maps, scorerange, alninfo = self._load_parallel(annotation)
-        else:
-            maps, scorerange, alninfo = self._load_sequential(annotation)
-            lg.debug(str(alninfo))
+        ''' Load alignment sequentially using 1 CPU '''
+        maps, scorerange, alninfo = self._load_sequential(annotation)
+        lg.debug(str(alninfo))
 
+        ''' Convert alignment to sparse matrix '''
         self._mapping_to_matrix(maps, scorerange, alninfo)
         lg.debug(str(alninfo))
 

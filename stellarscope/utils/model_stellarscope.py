@@ -17,6 +17,7 @@ from collections import defaultdict, OrderedDict
 from .model import Telescope
 from ..utils.helpers import dump_data
 from ..utils.sparse_plus import row_identity_matrix
+from ..utils.sparse_plus import csr_matrix_plus as csr_matrix
 
 __author__ = 'Matthew Greenig'
 __copyright__ = "Copyright (C) 2022, Matthew Greenig"
@@ -52,37 +53,42 @@ class Stellarscope(Telescope):
         '''
         self.single_cell = True
 
-        self.read_bcode_map = {}  # Dictionary for storing alignment ids mapped to barcodes
-        self.read_umi_map = {}  # Dictionary for storing alignment ids mapped to UMIs
-        self.bcode_ridx_map = defaultdict(list)  # Dictionary for storing barcodes mapped to read indices
-        self.bcode_umi_map = defaultdict(list)  # Dictionary for storing barcodes mapped to UMIs
+        self.read_bcode_map = {}                # {read_id (str): barcode (str)}
+        self.read_umi_map = {}                  # {read_id (str): umi (str)}
+        self.bcode_ridx_map = defaultdict(list)  # {barcode (str): read_indexes (:obj:`set` of int)}
+        self.bcode_umi_map = defaultdict(list)   # {barcode (str): umis (:obj:`set` of str)}
 
-        self.whitelist = self._load_whitelist()
-        if self.whitelist:
+        self.whitelist = {}                     # {barcode (str): index (int)}
+
+        ''' Instance variables for pooling mode = "celltype" '''
+        self.bcode_ctype_map = {}               # {barcode (str): celltype (str)}
+        self.celltypes = {}                     # {celltype (str): index (int)}
+        # NOTE: we could reduce the size of the barcode-celltype map by
+        #       indexing the celltypes
+
+        # NOTE: is this redundant with the barcode-celltype map?
+        self.barcode_celltypes = None           # pd.DataFrame, barcode, celltype
+
+        ''' Load whitelist '''
+        if self.opts.whitelist:
+            self.whitelist = self._load_whitelist()
             lg.info(f'{len(self.whitelist)} barcodes found in whitelist.')
         else:
             lg.info('No whitelist provided.')
 
+        ''' Load celltype assignments '''
         if opts.pooling_mode == 'celltype':
-            self.celltype_map = self._load_celltype_file()
-            self.celltypes = sorted(set(self.celltype_map.values()))
+            self.bcode_ctype_map = self._load_celltype_file()
+            self.celltypes = sorted(set(self.bcode_ctype_map.values()))
             self.barcode_celltypes = pd.DataFrame({
-                'barcode': self.celltype_map.keys(),
-                'celltype': self.celltype_map.values()
+                'barcode': self.bcode_ctype_map.keys(),
+                'celltype': self.bcode_ctype_map.values()
             })
             lg.info(f'{len(self.celltypes)} unique celltypes found.')
-        else:
-            self.celltype_map = None
-            self.celltypes = None
-            self.barcode_celltypes = None
 
         return
 
-
     def _load_whitelist(self):
-        if not self.opts.whitelist:
-            return None
-
         _ret = {}
         with open(self.opts.whitelist, 'r') as fh:
             _bc_gen = (l.split('\t')[0].strip() for l in fh)
@@ -97,7 +103,10 @@ class Stellarscope(Telescope):
 
     def _load_celltype_file(self):
         if not self.opts.celltype_tsv:
-            return None
+            msg = 'celltype_tsv is required for pooling mode "celltype"'
+            msg += '\n(in Stellarscope.__init__)'
+            msg += '\nShould be checked during argument validation'
+            raise StellarscopeError(msg)
 
         _ret = {}
         with open(self.opts.celltype_tsv, 'r') as fh:
@@ -111,6 +120,7 @@ class Stellarscope(Telescope):
                 _ = _ret.setdefault(_bc, _ct)
                 assert _ == _ct, f'Cell type mismatch for {_bc}, "{_}" != "{_ct}"'
         return _ret
+
     def _store_read_info(self, read_id, barcode, umi):
         self.read_bcode_map[read_id] = barcode
         self.read_umi_map[read_id] = umi
@@ -165,7 +175,7 @@ class Stellarscope(Telescope):
             print('\n'.join(_fnames), file=outh)
 
         ''' Reassign reads '''
-        _assigned = tl.reassign('average', self.opts.conf_prob)
+        _assigned = tl.reassign(self.opts.reassign_mode, self.opts.conf_prob)
 
         if self.opts.reassign_mode == 'average':
             mtx_dtype = np.float64
@@ -173,7 +183,7 @@ class Stellarscope(Telescope):
             mtx_dtype = np.uint16
 
         count_mtx = lil_matrix((len(_ft_list), len(_bc_list)), dtype=mtx_dtype)
-        all_cellsums = []
+        counts_per_cell = []
 
         ''' Aggregate by barcode '''
         _bcidx = OrderedDict(
@@ -182,13 +192,34 @@ class Stellarscope(Telescope):
         )
 
         for _bc in _bc_list:
+            if _bc not in _bcidx:
+                msg = f'barcode "{_bc}" not in _bc_list, '
+                if self.whitelist:
+                    msg += f'using whitelist {self.opts.whitelist}.'
+                else:
+                    msg += 'not using whitelist.'
+                raise StellarscopeError(msg)
             if _bc in _bcidx:
                 _rows = _bcidx[_bc]
                 _I = row_identity_matrix(_rows, _assigned.shape[0])
                 _assigned_cell = _assigned.multiply(_I)
-                _cellsums = _assigned_cell.sum(0)
-                all_cellsums.append(_cellsums)
-        ''' Deduplicate UMIs'''
+                if self.opts.ignore_umi:
+                    _dense_cell_colsums = _assigned_cell.sum(0)
+                    _cell_colsums = _assigned_cell.colsums()
+                    assert _cell_colsums.check_equal(csr_matrix(_dense_cell_colsums))
+
+                else:
+                    ''' Deduplicate UMIs'''
+                    pass # code for UMI correction
+
+                counts_per_cell.append(_cell_colsums)
+
+        assert all(_.shape == (1, len(_ft_list)) for _ in counts_per_cell)
+        assert len(counts_per_cell) == len(_bc_list)
+
+        count_mtx2 = scipy.sparse.vstack(counts_per_cell, dtype=mtx_dtype)
+
+
         lg.info('DEV IN PROGRESS')
 
         return

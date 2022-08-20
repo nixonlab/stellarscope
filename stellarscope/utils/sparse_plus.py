@@ -170,6 +170,13 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
     def multiply(self, other):
         return type(self)(super().multiply(other))
 
+
+    def colsums(self):
+        # use
+        _dense_colsums = self.sum(0)
+        return type(self)(_dense_colsums)
+
+
     def save(self, filename):
         np.savez(filename, data=self.data, indices=self.indices,
                  indptr=self.indptr, shape=self.shape)
