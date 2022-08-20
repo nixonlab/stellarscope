@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
 from __future__ import absolute_import
 from builtins import object
 
@@ -8,8 +7,9 @@ from collections import defaultdict, namedtuple, Counter, OrderedDict
 import logging as lg
 import pickle
 
-
 from intervaltree import Interval, IntervalTree
+
+from .annotation import BaseAnnotation
 
 
 __author__ = 'Matthew L. Bendall'
@@ -24,7 +24,7 @@ def overlap_length(a,b):
 def merge_intervals(a, b, d=None):
     return Interval(min(a.begin,b.begin), max(a.end,b.end), d)
 
-class _AnnotationIntervalTree(object):
+class _AnnotationIntervalTree(BaseAnnotation):
 
     def __init__(self, gtf_file, attribute_name, stranded_mode, feature_type='exon'):
         lg.debug('Using intervaltree for annotation.')

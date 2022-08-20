@@ -16,7 +16,7 @@ from . import utils
 from .utils.helpers import format_minutes as fmtmins
 
 from .utils.model import TelescopeLikelihood
-from .utils.model_stellarscope import Stellarscope
+from .utils.model import Stellarscope
 from .stellarscope_assign import StellarscopeAssignOptions
 
 __author__ = 'Matthew L. Bendall'

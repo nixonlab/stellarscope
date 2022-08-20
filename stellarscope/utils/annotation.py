@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
 from __future__ import absolute_import
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
+
+class BaseAnnotation(object):
+    pass
 
 def get_annotation_class(annotation_class_name):
     """ Get Annotation class matching provided name

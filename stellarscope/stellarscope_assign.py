@@ -24,7 +24,7 @@ from . import utils
 from .utils.helpers import format_minutes as fmtmins
 from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
-from .utils.model_stellarscope import Stellarscope, StellarscopeError
+from .utils.model import Stellarscope, StellarscopeError
 from .utils.annotation import get_annotation_class
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
@@ -225,17 +225,26 @@ def run(args):
         dump_data(opts.outfile_path('probs_after_fit'), ts_model.z)
 
     # Output final report
+    lg.info("Generating Old Report...")
+    stime = time()
+    ts.output_report_old(ts_model,
+                         opts.outfile_path('run_stats.tsv'),
+                         opts.outfile_path('TE_counts.mtx'),
+                         opts.outfile_path('barcodes.tsv'),
+                         opts.outfile_path('features.tsv')
+                         )
+    lg.info("Old report generated in %s" % fmtmins(time() - stime))
+
     lg.info("Generating Report...")
-    # ts.output_report(ts_model,
-    #                  opts.outfile_path('run_stats.tsv'),
-    #                  opts.outfile_path('TE_counts.mtx'),
-    #                  opts.outfile_path('barcodes.tsv'),
-    #                  opts.outfile_path('features.tsv'))
+    stime = time()
     ts.output_report(ts_model)
+    lg.info("Report generated in %s" % fmtmins(time() - stime))
 
     if opts.updated_sam:
         lg.info("Creating updated SAM file...")
+        stime = time()
         ts.update_sam(ts_model, opts.outfile_path('updated.bam'))
+        lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))
     return
