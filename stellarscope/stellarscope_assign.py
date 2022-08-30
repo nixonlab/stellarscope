@@ -262,10 +262,10 @@ def run(args):
     lg.info("Generating Old Report...")
     stime = time()
     ts.output_report_old(ts_model,
-                         opts.outfile_path('run_stats.tsv'),
-                         opts.outfile_path('TE_counts.mtx'),
-                         opts.outfile_path('barcodes.tsv'),
-                         opts.outfile_path('features.tsv')
+                         opts.outfile_path('run_stats_old.tsv'),
+                         opts.outfile_path('TE_counts_old.mtx'),
+                         opts.outfile_path('barcodes_old.tsv'),
+                         opts.outfile_path('features_old.tsv')
                          )
     lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
