@@ -144,5 +144,30 @@ def configure_logging(opts):
                         stream=opts.logfile)
     return
 
+import time
+def human_format(num):
+    """ Format number to human readable format.
+
+    From https://stackoverflow.com/questions/579310/formatting-long-numbers-as-strings-in-python
+
+    Args:
+        num:
+
+    Returns:
+
+    """
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    # add more suffixes if you need them
+    return '%.1f%s' % (num, ['', 'K', 'M', 'G', 'T', 'P'][magnitude])
+
+def log_progress(nfrags, overwrite=True):
+    prev = logging.StreamHandler.terminator
+    if overwrite: logging.StreamHandler.terminator = '\r'
+    logging.info(f'...processed {human_format(nfrags)} fragments')
+    logging.StreamHandler.terminator = prev
+
 # A very large integer
 BIG_INT = 2**32 - 1
