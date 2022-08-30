@@ -190,7 +190,7 @@ def run(args):
     total_time = time()
 
     ''' Create Stellarscope object '''
-    ts = Stellarscope(opts)
+    st_obj = Stellarscope(opts)
 
     ''' Load annotation '''
     Annotation = get_annotation_class(opts.annotation_class)
@@ -205,15 +205,20 @@ def run(args):
     ''' Load alignments '''
     lg.info('Loading alignments...')
     stime = time()
-    ts.load_alignment(annot)
+    st_obj.load_alignment(annot)
     lg.info("Loaded alignment in {}".format(fmtmins(time() - stime)))
 
     ''' Print alignment summary '''
-    ts.print_summary(lg.INFO)
+    st_obj.print_summary(lg.INFO)
 
     if opts.devmode:
-        dump_data(opts.outfile_path('00-uncorrected'), ts.raw_scores)
-
+        dump_data(opts.outfile_path('00-uncorrected'), st_obj.raw_scores)
+        dump_data(opts.outfile_path('00-read_index'), st_obj.read_index)
+        dump_data(opts.outfile_path('00-feat_index'), st_obj.feat_index)
+        dump_data(opts.outfile_path('00-read_bcode_map'), st_obj.read_bcode_map)
+        dump_data(opts.outfile_path('00-read_umi_map'), st_obj.read_umi_map)
+        dump_data(opts.outfile_path('00-bcode_ridx_map'), st_obj.bcode_ridx_map)
+        dump_data(opts.outfile_path('00-whitelist'), st_obj.whitelist)
 
     ''' Free up memory used by annotation '''
     annot = None
@@ -223,61 +228,72 @@ def run(args):
         lg.info('Skipping UMI deduplication...')
     else:
         stime = time()
-        ts.dedup_umi()
+        st_obj.dedup_umi()
         lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
 
-        if opts.devmode:
-            dump_data(opts.outfile_path('01-corrected'), ts.raw_scores)
-            dump_data(opts.outfile_path('02-uncorrected'), ts.uncorrected)
+    if opts.devmode:
+        dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
+        dump_data(opts.outfile_path('01-corrected'), st_obj.corrected)
+        dump_data(opts.outfile_path('01-read_index'), st_obj.read_index)
+        dump_data(opts.outfile_path('01-feat_index'), st_obj.feat_index)
+        dump_data(opts.outfile_path('01-read_bcode_map'), st_obj.read_bcode_map)
+        dump_data(opts.outfile_path('01-read_umi_map'), st_obj.read_umi_map)
+        dump_data(opts.outfile_path('01-bcode_ridx_map'), st_obj.bcode_ridx_map)
+        dump_data(opts.outfile_path('01-whitelist'), st_obj.whitelist)
 
     ''' Save object checkpoint '''
-    ts.save(opts.outfile_path('checkpoint'))
+    st_obj.save(opts.outfile_path('checkpoint'))
     if opts.skip_em:
         lg.info("Skipping EM...")
         lg.info("stellarscope assign complete (%s)" % fmtmins(time()-total_time))
         return
 
     ''' Seed RNG '''
-    seed = ts.get_random_seed()
-    lg.debug("Random seed: {}".format(seed))
+    seed = st_obj.get_random_seed()
+    lg.info("Random seed: {}".format(seed))
     np.random.seed(seed)
 
     lg.info('Running Expectation-Maximization...')
     stime = time()
-    ts.barcodes = ts.bcode_ridx_map.keys()
-    ts_model = fit_telescope_model(ts, opts)
+    st_obj.barcodes = st_obj.bcode_ridx_map.keys()
+    ts_model = fit_telescope_model(st_obj, opts)
     lg.info("EM completed in %s" % fmtmins(time() - stime))
 
 
     lg.info('Running Expectation-Maximization...')
     stime = time()
-    st_model = model.fit_pooling_model(ts, opts)
+    st_model = model.fit_pooling_model(st_obj, opts)
     lg.info("EM completed in %s" % fmtmins(time() - stime))
     if opts.devmode:
-        dump_data(opts.outfile_path('rawscores_after_fit'), ts.raw_scores)
-        dump_data(opts.outfile_path('probs_after_fit_t'), ts_model.z)
-        dump_data(opts.outfile_path('probs_after_fit_s'), st_model.z)
+        dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)
+        dump_data(opts.outfile_path('02-corrected'), st_obj.corrected)
+        dump_data(opts.outfile_path('02-read_index'), st_obj.read_index)
+        dump_data(opts.outfile_path('02-feat_index'), st_obj.feat_index)
+        dump_data(opts.outfile_path('02-read_bcode_map'), st_obj.read_bcode_map)
+        dump_data(opts.outfile_path('02-read_umi_map'), st_obj.read_umi_map)
+        dump_data(opts.outfile_path('02-bcode_ridx_map'), st_obj.bcode_ridx_map)
+        dump_data(opts.outfile_path('02-whitelist'), st_obj.whitelist)
 
     # Output final report
     lg.info("Generating Old Report...")
     stime = time()
-    ts.output_report_old(ts_model,
-                         opts.outfile_path('run_stats_old.tsv'),
-                         opts.outfile_path('TE_counts_old.mtx'),
-                         opts.outfile_path('barcodes_old.tsv'),
-                         opts.outfile_path('features_old.tsv')
-                         )
+    st_obj.output_report_old(ts_model,
+                             opts.outfile_path('run_stats_old.tsv'),
+                             opts.outfile_path('TE_counts_old.mtx'),
+                             opts.outfile_path('barcodes_old.tsv'),
+                             opts.outfile_path('features_old.tsv')
+                             )
     lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
     lg.info("Generating Report...")
     stime = time()
-    ts.output_report(ts_model)
+    st_obj.output_report(ts_model)
     lg.info("Report generated in %s" % fmtmins(time() - stime))
 
     if opts.updated_sam:
         lg.info("Creating updated SAM file...")
         stime = time()
-        ts.update_sam(ts_model, opts.outfile_path('updated.bam'))
+        st_obj.update_sam(ts_model, opts.outfile_path('updated.bam'))
         lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))

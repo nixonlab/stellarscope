@@ -171,7 +171,7 @@ class Telescope(object):
     def get_random_seed(self):
         ret = self.run_info['total_fragments'] % self.shape[0] * self.shape[1]
         # 2**32 - 1 = 4294967295
-        return ret % 4294967295
+        return 12345 # ret % 4294967295
 
     def load_alignment(self, annotation):
         self.run_info['annotated_features'] = len(annotation.loci)
@@ -909,8 +909,7 @@ class Assigner:
 Stellarscope model
 """
 
-def select_umi_representatives(umi_feat_scores: list[dict[int, int]],
-                               labels : list[str] = None,
+def select_umi_representatives(umi_feat_scores,
                                best_score : bool = False
                                ) -> (set[int] | set[str]):
     """ Select best representative(s) among reads with same BC+UMI
@@ -918,39 +917,52 @@ def select_umi_representatives(umi_feat_scores: list[dict[int, int]],
     Parameters
     ----------
     umi_feat_scores
-    labels
     best_score
 
     Returns
     -------
 
     """
-    _subset_feats = []
+    ''' Unpack the list of tuples '''
+    _labels, _score_vecs = list(zip(*umi_feat_scores))
+    # for label, vec in umi_feat_scores.items():
+    #     _labels.append(label)
+    #     _score_vecs.append(vec)
+
+    ''' Subset each vector for top scores (optional) '''
+    _subset_vecs = []
     if best_score:
-        for i, vec in enumerate(umi_feat_scores):
-            _subset_vec = {ft:sc for ft,sc in vec if sc == max(vec.values())}
-            _subset_feats.append(_subset_vec)
+        for i,vec in enumerate(_score_vecs):
+            _sub = {ft: sc for ft, sc in vec if sc == max(vec.values())}
+            _subset_vecs.append(_sub)
     else:
-        _subset_feats = umi_feat_scores
+        _subset_vecs = _score_vecs
 
     ''' Calculate adjacency matrix '''
-    n = len(umi_feat_scores)
+    n = len(_subset_vecs)
     graph = scipy.sparse.dok_matrix((n, n), dtype=np.uint8)
     for i, j in itertools.combinations(range(n), 2):
-        inter = _subset_feats[i].keys() & _subset_feats[j].keys()
-        graph[i, j] = sum(_subset_feats[i][x] for x in inter)
-        graph[j, i] = sum(_subset_feats[j][x] for x in inter)
+        inter = _subset_vecs[i].keys() & _subset_vecs[j].keys()
+        graph[i, j] = sum(_subset_vecs[i][x] for x in inter)
+        graph[j, i] = sum(_subset_vecs[j][x] for x in inter)
 
     ncomp, comps = connected_components(graph, directed=False)
     # if ncomp > 1:
     #     lg.info('multiple components encountered')
 
-    ''' Choose best read for each component '''
-    representatives = {}
+    ''' Choose best read for each component.
+        For each component:
+            - select reads belonging to component
+            - calculate ranking statistics for reads (component_rank)
+            - sort so that representative (best) read is first
+    '''
+    component_rep = {} # component number -> representative row index
+    reps = []
+    is_excluded = [True] * n
     for c_i in range(ncomp):
         component_rank = []
         for row in np.where(comps == c_i)[0].tolist():
-            scores = list(umi_feat_scores[row].values())
+            scores = list(_score_vecs[row].values())
             component_rank.append((
                 max(scores) / sum(scores), # maximum normalized score
                 -len(scores),              # number of features (ambiguity)
@@ -960,45 +972,40 @@ def select_umi_representatives(umi_feat_scores: list[dict[int, int]],
             ))
 
         component_rank.sort(reverse=True)
-        representatives[c_i] = component_rank[0][-1]
+        rep_index = component_rank[0][-1]
+        component_rep[c_i] = _labels[rep_index]
+        reps.append(_labels[rep_index])
+        is_excluded[rep_index] = False
 
-    if labels:
-        ret = [labels[_] for _ in representatives.values()]
-        assert len(set(ret)) == len(ret)
-        return set(ret)
-    else:
-        ret = list(representatives.values())
-        assert len(set(ret)) == len(ret)
-        return set(ret)
-
-
+    return reps, is_excluded
 
 def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
-    def fit_pseudobulk():
-        st_model = TelescopeLikelihood(st.raw_scores, st.opts)
+    def fit_pseudobulk(scoremat):
+        st_model = TelescopeLikelihood(scoremat, opts)
         st_model.em(use_likelihood=opts.use_likelihood, loglev=lg.INFO)
         return st_model
-    def fit_individual():
+
+    def fit_individual(scoremat):
         z_mats = []
         log_likelihoods = []
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
-            _I = row_identity_matrix(_rows, st.raw_scores.shape[0])
-            _submod = TelescopeLikelihood(st.raw_scores.multiply(_I), st.opts)
+            _I = row_identity_matrix(_rows, scoremat.shape[0])
+            _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
             ''' Run EM '''
             lg.info(f"Running EM for {_bcode}")
-            _submod.em(use_likelihood=st.opts.use_likelihood, loglev=lg.DEBUG)
+            _submod.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
             z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
             log_likelihoods.append(_submod.lnl)
 
-        all_z = csr_matrix(st.raw_scores.shape, dtype=np.float64)
+        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         for _z in z_mats:
             all_z += _z
 
         if opts.devmode:
             dump_data(opts.outfile_path('all_merged_z'), all_z)
 
-        st_model = TelescopeLikelihood(st.raw_scores, st.opts)
+        st_model = TelescopeLikelihood(scoremat, opts)
         st_model.z = all_z
         st_model.lnl = sum(log_likelihoods)
         return st_model
@@ -1006,20 +1013,25 @@ def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> Te
     def fit_celltype():
         pass
 
+    ''' fit_pooling_model '''
+    if opts.ignore_umi:
+        assert st.corrected is None, 'ignore_umi but st_obj.corrected is not None'
+        _scoremat = st.raw_scores
+    else:
+        assert st.corrected.shape == st.shape, 'umi correction but st_obj.corrected is not None'
+        _scoremat = st.corrected
+
+
     if opts.pooling_mode == 'individual':
-        st_model = fit_individual()
+        st_model = fit_individual(_scoremat)
     elif opts.pooling_mode == 'pseudobulk':
-        st_model = fit_pseudobulk()
+        st_model = fit_pseudobulk(_scoremat)
     elif opts.pooling_mode == 'celltype':
         st_model = fit_celltype()
     else:
         msg = f'Invalid pooling mode "{opts.pooling_mode}". '
         msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
         raise ValueError(msg)
-
-    if opts.devmode:
-        dump_data(opts.outfile_path('rawscores_after_fit_inside'), st.raw_scores)
-        dump_data(opts.outfile_path('probs_after_fit_inside'), st_model.z)
 
     return st_model
 
@@ -1068,6 +1080,7 @@ class Stellarscope(Telescope):
         '''
         self.single_cell = True
 
+        self.corrected = None                   # UMI corrected alignment scores
         self.read_bcode_map = {}                # {read_id (str): barcode (str)}
         self.read_umi_map = {}                  # {read_id (str): umi (str)}
         self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
@@ -1376,63 +1389,84 @@ class Stellarscope(Telescope):
         -------
 
         """
-        exclude_qnames = set()  # reads to be excluded
-        duplicated_umis = {}
+        exclude_qnames: dict[str, int] = {}  # reads to be excluded
+        # duplicated_umis: dict[tuple[str, str], dict[str, set]] = {}
+        duplicated_umis = defaultdict(lambda: {'reps':[], 'exclude': []})
 
         ''' Index read names by barcode+umi '''
-        bcumi_read = defaultdict(set)
+        bcumi_read = defaultdict(dict)
         for qname in self.read_index:
             key = (self.read_bcode_map[qname], self.read_umi_map[qname])
-            bcumi_read[key].add(qname)
+            _ = bcumi_read[key].setdefault(qname, None)
+
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('00a-bcumi_read'), bcumi_read)
 
         ''' Loop over all bc+umi pairs'''
         for (bc, umi), qnames in bcumi_read.items():
             if len(qnames) == 1: continue
 
             ''' multiple reads with same barcode+umi '''
-            duplicated_umis[(bc, umi)] = {'reps': set(), 'exclude': set()}
-            qnames_list = list(qnames)
+            # duplicated_umis[(bc, umi)] = {'reps': set(), 'exclude': set()}
+            # qnames_list = list(qnames)
+            # umi_feat_scores = {}
             umi_feat_scores = []
-            for qname in qnames_list:
+            for qname in qnames.keys():
                 row_m = self.raw_scores[self.read_index[qname], ]
                 vec = {ft:sc for ft,sc in zip(row_m.indices, row_m.data)}
                 assert self.feat_index[self.opts.no_feature_key] == 0
                 _ = vec.pop(0, None)
-                umi_feat_scores.append(vec)
+                umi_feat_scores.append((qname, vec))
 
-            reps = select_umi_representatives(umi_feat_scores, qnames_list)
-            exclude_qnames |= qnames.difference(reps)
-            # this is for tracking
-            duplicated_umis[(bc, umi)]['reps'] |= reps
-            duplicated_umis[(bc, umi)]['exclude'] |= qnames.difference(reps)
+            reps, is_excluded = select_umi_representatives(umi_feat_scores)
+
+            for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
+                if ex:
+                    _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
+                    duplicated_umis[(bc, umi)]['exclude'].append(qname)
+                else:
+                    duplicated_umis[(bc, umi)]['reps'].append(qname)
 
         ''' Remove excluded reads '''
         # sanity check
-        for t in duplicated_umis:
+        for t, d in duplicated_umis.items():
+            assert len(d['exclude']) == len(set(d['exclude'])), 'contains duplicates'
+            assert len(d['reps']) == len(set(d['reps'])), 'contains duplicates'
             n0 = len(bcumi_read[t])
-            n1 = len(duplicated_umis[t]['reps']) + len(duplicated_umis[t]['exclude'])
+            n1 = len(d['exclude']) + len(d['reps'])
             assert n0 == n1
 
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('00a-duplicated_umis'), duplicated_umis)
+
         exclude_rows = sorted(self.read_index[qname] for qname in exclude_qnames)
-        exclude_qnames2 = set()
-        for k,d in duplicated_umis.items():
-            exclude_qnames2 |= d['exclude']
-        exclude_rows2 = sorted(self.read_index[qname] for qname in exclude_qnames2)
-        assert all(r1==r2 for r1,r2 in zip(exclude_rows, exclude_rows2))
+
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('00a-exclude_rows'), exclude_rows)
+
+        # exclude_qnames2 = set()
+        # for k,d in duplicated_umis.items():
+        #     exclude_qnames2 |= d['exclude']
+        # exclude_rows2 = sorted(self.read_index[qname] for qname in exclude_qnames2)
+        # assert all(r1==r2 for r1,r2 in zip(exclude_rows, exclude_rows2))
 
         exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('00a-exclude_mat'), exclude_mat)
+            dump_data(self.opts.outfile_path('00a-uncorrected'), self.raw_scores)
 
-        corrected = (self.raw_scores - self.raw_scores.multiply(exclude_mat))
+        self.corrected = (self.raw_scores - self.raw_scores.multiply(exclude_mat))
+
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('00b-corrected'), self.corrected)
+            dump_data(self.opts.outfile_path('00b-uncorrected'), self.raw_scores)
 
         # sanity check
         for r in range(self.shape[0]):
             if r in exclude_rows:
-                assert corrected[r,].nnz == 0
+                assert self.corrected[r,].nnz == 0
             else:
-                assert self.raw_scores[r,].check_equal(corrected[r,])
-
-        self.uncorrected = self.raw_scores
-        self.raw_scores = corrected
+                assert self.raw_scores[r,].check_equal(self.corrected[r,])
 
         return
 
@@ -1521,6 +1555,8 @@ class Stellarscope(Telescope):
 
         stacked = scipy.sparse.vstack(counts_per_cell, dtype=mtx_dtype)
         count_mtx = self.opts.outfile_path('TE_counts_new.mtx')
+        if self.opts.devmode:
+            dump_data(self.opts.outfile_path('final_count_matrix'), stacked)
         scipy.io.mmwrite(count_mtx, stacked)
         lg.info('DEV IN PROGRESS')
 

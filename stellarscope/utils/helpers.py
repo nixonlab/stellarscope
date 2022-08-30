@@ -158,7 +158,7 @@ def str2int(s):
             return s
 
 
-def dump_data(fn, obj, save_npz=True, save_txt=True):
+def dump_data(fn, obj, save_npz=False, save_txt=True):
     if isinstance(obj, scipy.sparse.spmatrix):
         M = obj.tocoo()
         if save_npz:
@@ -170,3 +170,18 @@ def dump_data(fn, obj, save_npz=True, save_txt=True):
                 print('\n'.join('\t'.join(map(str, _)) for _ in tups),
                       file=outh)
             lg.info("data to outfile: %s" % fn + '.txt')
+    elif isinstance(obj, list):
+        if save_txt:
+            with open(fn + '.txt', 'w') as outh:
+                print('\n'.join(map(str, obj)), file=outh)
+    elif isinstance(obj, dict):
+        if save_txt:
+            with open(fn + '.txt', 'w') as outh:
+                for k,v in obj.items():
+                    print(f'key: {str(k)}\nvalue: {str(v)}', file=outh)
+    elif obj is None:
+        if save_txt:
+            with open(fn + '.txt', 'w') as outh:
+                print('None', file=outh)
+    else:
+        raise TypeError()
