@@ -72,7 +72,7 @@ cdef class AlignedPair:
         return self.r1.reference_name
 
     @property
-    def query_id(self):
+    def query_name(self):
         return self.r1.query_name
 
     @property

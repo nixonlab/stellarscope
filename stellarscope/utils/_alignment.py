@@ -59,7 +59,7 @@ class AlignedPair(object):
         return self.r1.reference_name
 
     @property
-    def query_id(self):
+    def query_name(self):
         if self.r2 is None:
                 if self.r1.is_read2:
                     return self.r1.query_name + '/2'
