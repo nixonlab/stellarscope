@@ -45,18 +45,6 @@
               temporary directory.
         hide: True
 - Reporting Options:
-    - quiet:
-        action: store_true
-        help: Silence (most) output.
-    - debug:
-        action: store_true
-        help: Print verbose debug messages.
-    - devmode:
-        action: store_true
-        help: Print verbose debug messages and internal data.
-    - logfile:
-        type: argparse.FileType('r')
-        help: Log output to this file.
     - outdir:
         default: .
         help: Output directory.
@@ -66,6 +54,29 @@
     - updated_sam:
         action: store_true
         help: Generate an updated alignment file.
+    - use_every_reassign_mode:
+        action: store_true
+        help: Whether to output count matrices generated using every reassign mode.
+              If specified, six output count matrices will be generated,
+              corresponding to the six possible reassignment methods (all, exclude,
+              choose, average, conf, unique).
+    - logfile:
+        type: argparse.FileType('r')
+        help: Log output to this file.
+    - quiet:
+        action: store_true
+        help: Silence (most) output.
+    - debug:
+        action: store_true
+        help: Print verbose debug messages.
+    - devmode:
+        action: store_true
+        help: Print verbose debug messages and internal data.
+    - progress:
+        type: int
+        default: 1000000
+        help: Frequency of alignment processing progress message. Set to 0
+              to suppress message.
 - Run Modes:
     - pooling_mode:
         type: str
@@ -103,12 +114,6 @@
               NOTE: Results using all assignment modes are included in the
               statistics report by default. This argument determines what
               mode will be used for the outputted counts file.
-    - use_every_reassign_mode:
-        action: store_true
-        help: Whether to output count matrices generated using every reassign mode.
-              If specified, six output count matrices will be generated,
-              corresponding to the six possible reassignment methods (all, exclude,
-              choose, average, conf, unique).
     - conf_prob:
         type: float
         default: 0.9

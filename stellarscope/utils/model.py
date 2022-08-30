@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
+from __future__ import print_function, annotations
 from __future__ import absolute_import
+
+from typing import List, Any
+
 from past.utils import old_div
 
 import re
@@ -11,13 +14,16 @@ from collections import OrderedDict, defaultdict, Counter
 # import gc
 from multiprocessing import Pool
 import functools
+import itertools
 
 import numpy as np
 import scipy
 import pandas as pd
 import pysam
+from scipy.sparse.csgraph import connected_components
 
 from . import OptionsBase
+from . import log_progress
 from .helpers import dump_data
 from .sparse_plus import row_identity_matrix
 from .sparse_plus import csr_matrix_plus as csr_matrix
@@ -26,16 +32,18 @@ from .colors import c2str, D2PAL, GPAL
 from .helpers import str2int, region_iter, phred
 
 from . import alignment
+from .alignment import get_tag_alignments
+from .alignment import CODES as ALNCODES
 from . import annotation
 from . import BIG_INT
 
 __author__ = 'Matthew L. Bendall, Matthew Greenig'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall, Matthew Greenig"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall, Matthew Greenig"
 
 
 def process_overlap_frag(pairs, overlap_feats):
     ''' Find the best alignment for each locus '''
-    assert all(pairs[0].query_id == p.query_id for p in pairs)
+    assert all(pairs[0].query_name == p.query_name for p in pairs)
     ''' Organize by feature'''
     byfeature = defaultdict(list)
     for pair, feat in zip(pairs, overlap_feats):
@@ -49,7 +57,7 @@ def process_overlap_frag(pairs, overlap_feats):
         # Add best alignment to mappings
         _topaln = falns[0]
         _maps.append(
-            (_topaln.query_id, feat, _topaln.alnscore, _topaln.alnlen)
+            (_topaln.query_name, feat, _topaln.alnscore, _topaln.alnlen)
         )
         # Set tag for feature (ZF) and whether it is best (ZT)
         _topaln.set_tag('ZF', feat)
@@ -69,13 +77,16 @@ def process_overlap_frag(pairs, overlap_feats):
     return _maps
 
 
-def _print_progress(nfrags, infolev=2500000):
-    mfrags = nfrags / 1e6
-    msg = '...processed {:.1f}M fragments'.format(mfrags)
-    if nfrags % infolev == 0:
-        lg.info(msg)
-    else:
-        lg.debug(msg)
+# def _print_progress(nfrags, opts):
+#     mfrags = nfrags / 1e6
+#     msg = '...processed {:.1f}M fragments'.format(mfrags)
+#     print(f'\r{msg}', end='', file=opts.logfile)
+#     # lg.info(msg)
+#     # if nfrags % infolev == 0:
+#     #     # lg.info('\r')
+#     #     lg.info(msg)
+#     # else:
+#     #     lg.debug(msg)
 
 class Telescope(object):
     """
@@ -249,7 +260,7 @@ class Telescope(object):
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
                 alninfo['total_fragments'] += 1
                 if alninfo['total_fragments'] % 500000 == 0:
-                    _print_progress(alninfo['total_fragments'])
+                    log_progress(alninfo['total_fragments'])
 
                 ''' Count code '''
                 _code = alignment.CODES[ci][0]
@@ -291,7 +302,7 @@ class Telescope(object):
                 if self.single_cell:
                     if self.opts.umi_tag in aln_tags and self.opts.barcode_tag in aln_tags:
                         self._store_read_info(
-                            alns[0].query_id,
+                            alns[0].query_name,
                             aln_tags.get(self.opts.barcode_tag),
                             aln_tags.get(self.opts.umi_tag)
                         )
@@ -416,7 +427,7 @@ class Telescope(object):
                     if pair.r1.has_tag('ZT') and pair.r1.get_tag('ZT') == 'SEC':
                         continue
                     _mappings.append((
-                        pair.query_id,
+                        pair.query_name,
                         pair.r1.get_tag('ZF'),
                         pair.alnscore,
                         pair.alnlen
@@ -537,7 +548,7 @@ class Telescope(object):
             outsam = pysam.AlignmentFile(filename, 'wb', header=header)
             for code, pairs in alignment.fetch_fragments_seq(sf, until_eof=True):
                 if len(pairs) == 0: continue
-                ridx = self.read_index[pairs[0].query_id]
+                ridx = self.read_index[pairs[0].query_name]
                 for aln in pairs:
                     if aln.is_unmapped:
                         aln.write(outsam)
@@ -597,7 +608,7 @@ class Telescope(object):
         lg.log(loglev, '        {} map to multiple loci.'.format(
             _d['overlap_ambig']))
         lg.log(loglev, '\n')
-    
+
     def __str__(self):
         if hasattr(self.opts, 'samfile'):
             return '<Telescope samfile=%s, gtffile=%s>'.format(
@@ -781,8 +792,8 @@ class TelescopeLikelihood(object):
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
 
 
-        lg.log(loglev+10, 'EM {:s} after {:d} iterations.'.format(_con, inum))
-        lg.log(loglev+10, 'Final log-likelihood: {:f}.'.format(self.lnl))
+        lg.log(loglev, 'EM {:s} after {:d} iterations.'.format(_con, inum))
+        lg.log(loglev, 'Final log-likelihood: {:f}.'.format(self.lnl))
         return
 
     def reassign(self, method, thresh=0.9, initial=False):
@@ -898,10 +909,136 @@ class Assigner:
 Stellarscope model
 """
 
+def select_umi_representatives(umi_feat_scores: list[dict[int, int]],
+                               labels : list[str] = None,
+                               best_score : bool = False
+                               ) -> (set[int] | set[str]):
+    """ Select best representative(s) among reads with same BC+UMI
+
+    Parameters
+    ----------
+    umi_feat_scores
+    labels
+    best_score
+
+    Returns
+    -------
+
+    """
+    _subset_feats = []
+    if best_score:
+        for i, vec in enumerate(umi_feat_scores):
+            _subset_vec = {ft:sc for ft,sc in vec if sc == max(vec.values())}
+            _subset_feats.append(_subset_vec)
+    else:
+        _subset_feats = umi_feat_scores
+
+    ''' Calculate adjacency matrix '''
+    n = len(umi_feat_scores)
+    graph = scipy.sparse.dok_matrix((n, n), dtype=np.uint8)
+    for i, j in itertools.combinations(range(n), 2):
+        inter = _subset_feats[i].keys() & _subset_feats[j].keys()
+        graph[i, j] = sum(_subset_feats[i][x] for x in inter)
+        graph[j, i] = sum(_subset_feats[j][x] for x in inter)
+
+    ncomp, comps = connected_components(graph, directed=False)
+    # if ncomp > 1:
+    #     lg.info('multiple components encountered')
+
+    ''' Choose best read for each component '''
+    representatives = {}
+    for c_i in range(ncomp):
+        component_rank = []
+        for row in np.where(comps == c_i)[0].tolist():
+            scores = list(umi_feat_scores[row].values())
+            component_rank.append((
+                max(scores) / sum(scores), # maximum normalized score
+                -len(scores),              # number of features (ambiguity)
+                max(scores),               # maximum score
+                sum(scores),               # total scope
+                row,
+            ))
+
+        component_rank.sort(reverse=True)
+        representatives[c_i] = component_rank[0][-1]
+
+    if labels:
+        ret = [labels[_] for _ in representatives.values()]
+        assert len(set(ret)) == len(ret)
+        return set(ret)
+    else:
+        ret = list(representatives.values())
+        assert len(set(ret)) == len(ret)
+        return set(ret)
+
+
+
+def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
+    def fit_pseudobulk():
+        st_model = TelescopeLikelihood(st.raw_scores, st.opts)
+        st_model.em(use_likelihood=opts.use_likelihood, loglev=lg.INFO)
+        return st_model
+    def fit_individual():
+        z_mats = []
+        log_likelihoods = []
+        for _bcode, _rowset in st.bcode_ridx_map.items():
+            _rows = sorted(_rowset)
+            _I = row_identity_matrix(_rows, st.raw_scores.shape[0])
+            _submod = TelescopeLikelihood(st.raw_scores.multiply(_I), st.opts)
+            ''' Run EM '''
+            lg.info(f"Running EM for {_bcode}")
+            _submod.em(use_likelihood=st.opts.use_likelihood, loglev=lg.DEBUG)
+            z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
+            log_likelihoods.append(_submod.lnl)
+
+        all_z = csr_matrix(st.raw_scores.shape, dtype=np.float64)
+        for _z in z_mats:
+            all_z += _z
+
+        if opts.devmode:
+            dump_data(opts.outfile_path('all_merged_z'), all_z)
+
+        st_model = TelescopeLikelihood(st.raw_scores, st.opts)
+        st_model.z = all_z
+        st_model.lnl = sum(log_likelihoods)
+        return st_model
+
+    def fit_celltype():
+        pass
+
+    if opts.pooling_mode == 'individual':
+        st_model = fit_individual()
+    elif opts.pooling_mode == 'pseudobulk':
+        st_model = fit_pseudobulk()
+    elif opts.pooling_mode == 'celltype':
+        st_model = fit_celltype()
+    else:
+        msg = f'Invalid pooling mode "{opts.pooling_mode}". '
+        msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
+        raise ValueError(msg)
+
+    if opts.devmode:
+        dump_data(opts.outfile_path('rawscores_after_fit_inside'), st.raw_scores)
+        dump_data(opts.outfile_path('probs_after_fit_inside'), st_model.z)
+
+    return st_model
+
 
 class StellarscopeError(Exception):
     pass
 
+class AlignmentValidationError(StellarscopeError):
+    def __init__(self, msg, alns):
+        super().__init__(msg)
+        self.alns = alns
+    def __str__(self):
+        ret = super().__str__() + '\n'
+        for aln in self.alns:
+            ret += aln.r1.to_string() + '\n'
+            if aln.r2:
+                ret += aln.r2.to_string() + '\n'
+
+        return ret
 
 class Stellarscope(Telescope):
 
@@ -931,10 +1068,10 @@ class Stellarscope(Telescope):
         '''
         self.single_cell = True
 
-        self.read_bcode_map = {}                 # {read_id (str): barcode (str)}
-        self.read_umi_map = {}                   # {read_id (str): umi (str)}
-        self.bcode_ridx_map = defaultdict(list)  # {barcode (str): read_indexes (:obj:`set` of int)}
-        self.bcode_umi_map = defaultdict(list)   # {barcode (str): umis (:obj:`set` of str)}
+        self.read_bcode_map = {}                # {read_id (str): barcode (str)}
+        self.read_umi_map = {}                  # {read_id (str): umi (str)}
+        self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
+        self.bcode_umi_map = defaultdict(list)  # {barcode (str): umis (:obj:`set` of str)}
 
         self.whitelist = {}                      # {barcode (str): index (int)}
 
@@ -999,6 +1136,62 @@ class Stellarscope(Telescope):
                 assert _ == _ct, f'Cell type mismatch for {_bc}, "{_}" != "{_ct}"'
         return _ret
 
+    def load_alignment(self, annotation: annotation.BaseAnnotation):
+        """
+
+        Parameters
+        ----------
+        annotation
+
+        Returns
+        -------
+
+        """
+
+        def mapping_to_matrix(mappings, alninfo):
+            self.shape = (len(self.read_index), len(self.feat_index))
+
+            # rescale function to positive integers > 0
+            lg.info(f'score range: ({alninfo["minAS"]}, {alninfo["maxAS"]})')
+            rescale = lambda s: (s - alninfo['minAS'] + 1)
+
+            _m_dok = scipy.sparse.dok_matrix(self.shape, dtype=np.uint16)
+
+            for code, query_name, feat_name, alnscore, alnlen in mappings:
+                i = self.read_index[query_name]
+                j = self.feat_index[feat_name]
+                _m_dok[i, j] = max(_m_dok[i, j], rescale(alnscore) + alnlen)
+
+            ''' Check that all rows have nonzero values in feature columns'''
+            assert self.feat_index[self.opts.no_feature_key] == 0
+            _nz = scipy.sparse.csc_matrix(_m_dok)[:, 1:].sum(1).nonzero()[0]
+            assert len(_nz) == self.shape[0]
+
+            ''' Set raw score matrix'''
+            self.raw_scores = csr_matrix(_m_dok)
+            return
+
+        ''' Add feature information to object '''
+        self.run_info['annotated_features'] = len(annotation.loci)
+        self.feature_length = annotation.feature_length().copy()
+
+        ''' Initialize feature index with features '''
+        self.feat_index = {self.opts.no_feature_key: 0, }
+        for locus in annotation.loci.keys():
+            _ = self.feat_index.setdefault(locus, len(self.feat_index))
+
+        ''' Load alignment sequentially using 1 CPU '''
+        maps, alninfo = self._load_sequential(annotation)
+        lg.debug(str(alninfo))
+
+        ''' Convert alignment to sparse matrix '''
+        mapping_to_matrix(maps, alninfo)
+        lg.debug(str(alninfo))
+
+        for k,v in alninfo.items():
+            self.run_info[k] = v
+
+
     def _load_sequential(self, annotation):
         """ Load queryname sorted BAM sequentially
 
@@ -1008,46 +1201,130 @@ class Stellarscope(Telescope):
         Returns:
 
         """
-        _nfkey = self.opts.no_feature_key
-        _omode, _othresh = self.opts.overlap_mode, self.opts.overlap_threshold
+        def skip_fragment():
+            if self.opts.updated_sam:
+                [p.write(bam_u) for p in alns]
 
+        def process_fragment(alns: list['AlignedPair'],  overlap_feats: list[str]):
+            """ Find the best alignment for each locus
+
+            Parameters
+            ----------
+            alns
+            overlap_feats
+
+            Returns
+            -------
+
+            """
+            return process_overlap_frag(alns, overlap_feats)
+
+        def store_read_info(query_name, barcode, umi):
+            """ Adds read query name, barcode and UMI to Stellarscope indexes
+
+            Parameters
+            ----------
+            query_name
+            barcode
+            umi
+
+            Returns
+            -------
+            None
+
+            """
+            # Add read ID, barcode, and UMI to internal data
+            row = self.read_index.setdefault(query_name, len(self.read_index))
+
+            _prev = self.read_bcode_map.setdefault(query_name, barcode)
+            if _prev != barcode:
+                msg = f'Barcode error ({query_name}): {_prev} != {barcode}'
+                raise AlignmentValidationError(msg)
+
+            self.bcode_ridx_map[barcode].add(row)
+
+            if not self.opts.ignore_umi:
+                _prev = self.read_umi_map.setdefault(query_name, umi)
+                if _prev != umi:
+                    msg = f'UMI error ({query_name}): {_prev} != {umi}'
+                    raise AlignmentValidationError(msg)
+                self.bcode_umi_map[barcode].append(umi)
+            return
+
+        ''' Load sequential '''
+        _nfkey = self.opts.no_feature_key
+
+        # mappings is a list of tuples
+        # each mapping is (
         _mappings = []
         assign = Assigner(annotation, self.opts).assign_func()
 
-        assert self.single_cell, 'Stellarscope object is not single cell'
+        if not self.single_cell:
+            raise StellarscopeError('Stellarscope object is not single cell')
         _all_read_barcodes = []
 
-        """ Load unsorted reads """
-        alninfo = Counter()
+        # Initialize variables for function
+        alninfo = OrderedDict()
+        alninfo['total_fragments'] = 0  # total number of fragments
+        for code, desc in ALNCODES:
+            alninfo[code] = 0           # alignment code
+        alninfo['nofeat_U'] = 0         # uniquely aligns outside annotation
+        alninfo['nofeat_A'] = 0         # ambiguously aligns outside annotation
+        alninfo['feat_U'] = 0           # uniquely aligns overlapping annotation
+        alninfo['feat_A'] = 0           # ambiguously aligns overlapping annotation
+        alninfo['minAS'] = BIG_INT      # minimum alignment score
+        alninfo['maxAS'] = -BIG_INT      # maximum alignment score
+
+        # _minAS = BIG_INT
+        # _maxAS = -BIG_INT
+
         _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
             pysam.set_verbosity(_pysam_verbosity)
+
             # Create output temporary files
             if self.opts.updated_sam:
                 bam_u = pysam.AlignmentFile(self.other_bam, 'wb', template=sf)
                 bam_t = pysam.AlignmentFile(self.tmp_bam, 'wb', template=sf)
 
-            _minAS, _maxAS = BIG_INT, -BIG_INT
+            # Iterate over fragments
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
                 alninfo['total_fragments'] += 1
-                if alninfo['total_fragments'] % 500000 == 0:
-                    _print_progress(alninfo['total_fragments'])
+
+                # Write progress to console or log
+                if self.opts.progress and \
+                        alninfo['total_fragments'] % self.opts.progress == 0:
+                    log_progress(alninfo['total_fragments'])
 
                 ''' Count code '''
-                _code = alignment.CODES[ci][0]
+                _code = ALNCODES[ci][0]
                 alninfo[_code] += 1
 
                 ''' Check whether fragment is mapped '''
                 if _code == 'SU' or _code == 'PU':
-                    if self.opts.updated_sam: alns[0].write(bam_u)
+                    # if self.opts.updated_sam: alns[0].write(bam_u)
+                    skip_fragment()
                     continue
 
-                ''' make a dictionary from the alignment's tags '''
-                aln_tags = dict(alns[0].r1.get_tags())
+                ''' Get alignment barcode and UMI '''
+                _cur_qname = alns[0].query_name
+                _cur_bcode = get_tag_alignments(alns, self.opts.barcode_tag)
+                _cur_umi = get_tag_alignments(alns, self.opts.umi_tag)
+                # aln_tags = dict(alns[0].r1.get_tags())
 
-                ''' if single-cell, add cell's barcode to the list '''
-                if self.single_cell and self.opts.barcode_tag in aln_tags:
-                    _all_read_barcodes.append(aln_tags.get(self.opts.barcode_tag))
+                ''' Validate barcode and UMI '''
+                if _cur_bcode is None:
+                    skip_fragment()
+                    continue
+
+                if self.whitelist:
+                    if _cur_bcode not in self.whitelist:
+                        skip_fragment()
+                        continue
+
+                if not self.opts.ignore_umi and _cur_umi is None:
+                    skip_fragment()
+                    continue
 
                 ''' Fragment is ambiguous if multiple mappings'''
                 _mapped = [a for a in alns if not a.is_unmapped]
@@ -1055,8 +1332,8 @@ class Stellarscope(Telescope):
 
                 ''' Update min and max scores '''
                 _scores = [a.alnscore for a in _mapped]
-                _minAS = min(_minAS, *_scores)
-                _maxAS = max(_maxAS, *_scores)
+                alninfo['minAS'] = min(alninfo['minAS'], *_scores)
+                alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
 
                 ''' Check whether fragment overlaps annotation '''
                 overlap_feats = list(map(assign, _mapped))
@@ -1065,51 +1342,98 @@ class Stellarscope(Telescope):
                 ''' Fragment has no overlap, skip '''
                 if not has_overlap:
                     alninfo['nofeat_{}'.format('A' if _ambig else 'U')] += 1
-                    if self.opts.updated_sam:
-                        [p.write(bam_u) for p in alns]
+                    skip_fragment()
                     continue
 
                 ''' If running with single cell data, add cell tags to barcode/UMI trackers '''
-                if self.single_cell:
-                    if self.opts.umi_tag in aln_tags and self.opts.barcode_tag in aln_tags:
-                        self._store_read_info(
-                            alns[0].query_id,
-                            aln_tags.get(self.opts.barcode_tag),
-                            aln_tags.get(self.opts.umi_tag)
-                        )
+                # if self.single_cell:
+                # if self.opts.umi_tag in aln_tags and self.opts.barcode_tag in aln_tags:
+                store_read_info(_cur_qname, _cur_bcode, _cur_umi)
 
                 ''' Fragment overlaps with annotation '''
                 alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
 
                 ''' Find the best alignment for each locus '''
-                for m in process_overlap_frag(_mapped, overlap_feats):
+                for m in process_fragment(_mapped, overlap_feats):
                     _mappings.append((ci, m[0], m[1], m[2], m[3]))
 
                 if self.opts.updated_sam:
                     [p.write(bam_t) for p in alns]
 
-        if self.single_cell:
-            _unique_read_barcodes = set(_all_read_barcodes)
-            if self.whitelist is not None:
-                self.barcodes = list(_unique_read_barcodes.intersection(self.whitelist))
-                lg.info(f'{len(_unique_read_barcodes)} unique barcodes found in the alignment file, '
-                        f'{len(self.barcodes)} of which were also found in the barcode file.')
-            else:
-                self.barcodes = list(_unique_read_barcodes)
-                lg.info(f'{len(self.barcodes)} unique barcodes found in the alignment file.')
-
         ''' Loading complete '''
+        lg.info('\nLoading alignments complete.')
         if self.opts.updated_sam:
             bam_u.close()
             bam_t.close()
 
-        # lg.info('Alignment Info: {}'.format(alninfo))
-        return _mappings, (_minAS, _maxAS), alninfo
+        return _mappings, alninfo
 
 
-    def _store_read_info(self, read_id, barcode, umi):
-        self.read_bcode_map[read_id] = barcode
-        self.read_umi_map[read_id] = umi
+    def dedup_umi(self):
+        """
+
+        Returns
+        -------
+
+        """
+        exclude_qnames = set()  # reads to be excluded
+        duplicated_umis = {}
+
+        ''' Index read names by barcode+umi '''
+        bcumi_read = defaultdict(set)
+        for qname in self.read_index:
+            key = (self.read_bcode_map[qname], self.read_umi_map[qname])
+            bcumi_read[key].add(qname)
+
+        ''' Loop over all bc+umi pairs'''
+        for (bc, umi), qnames in bcumi_read.items():
+            if len(qnames) == 1: continue
+
+            ''' multiple reads with same barcode+umi '''
+            duplicated_umis[(bc, umi)] = {'reps': set(), 'exclude': set()}
+            qnames_list = list(qnames)
+            umi_feat_scores = []
+            for qname in qnames_list:
+                row_m = self.raw_scores[self.read_index[qname], ]
+                vec = {ft:sc for ft,sc in zip(row_m.indices, row_m.data)}
+                assert self.feat_index[self.opts.no_feature_key] == 0
+                _ = vec.pop(0, None)
+                umi_feat_scores.append(vec)
+
+            reps = select_umi_representatives(umi_feat_scores, qnames_list)
+            exclude_qnames |= qnames.difference(reps)
+            # this is for tracking
+            duplicated_umis[(bc, umi)]['reps'] |= reps
+            duplicated_umis[(bc, umi)]['exclude'] |= qnames.difference(reps)
+
+        ''' Remove excluded reads '''
+        # sanity check
+        for t in duplicated_umis:
+            n0 = len(bcumi_read[t])
+            n1 = len(duplicated_umis[t]['reps']) + len(duplicated_umis[t]['exclude'])
+            assert n0 == n1
+
+        exclude_rows = sorted(self.read_index[qname] for qname in exclude_qnames)
+        exclude_qnames2 = set()
+        for k,d in duplicated_umis.items():
+            exclude_qnames2 |= d['exclude']
+        exclude_rows2 = sorted(self.read_index[qname] for qname in exclude_qnames2)
+        assert all(r1==r2 for r1,r2 in zip(exclude_rows, exclude_rows2))
+
+        exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
+
+        corrected = (self.raw_scores - self.raw_scores.multiply(exclude_mat))
+
+        # sanity check
+        for r in range(self.shape[0]):
+            if r in exclude_rows:
+                assert corrected[r,].nnz == 0
+            else:
+                assert self.raw_scores[r,].check_equal(corrected[r,])
+
+        self.uncorrected = self.raw_scores
+        self.raw_scores = corrected
+
         return
 
     def save(self, filename):
@@ -1150,7 +1474,7 @@ class Stellarscope(Telescope):
         if self.whitelist:
             _bc_list = sorted(self.whitelist, key=self.whitelist.get)
         else:
-            _bc_list = self.barcodes
+            _bc_list = sorted(self.bcode_ridx_map.keys())
         with open(_bc_tsv, 'w') as outh:
             print('\n'.join(_bc_list), file=outh)
 
@@ -1168,44 +1492,36 @@ class Stellarscope(Telescope):
         else:
             mtx_dtype = np.uint16
 
-        count_mtx = scipy.sparse.lil_matrix((len(_ft_list), len(_bc_list)), dtype=mtx_dtype)
         counts_per_cell = []
 
         ''' Aggregate by barcode '''
-        _bcidx = OrderedDict(
-            {bcode: rows for bcode, rows in self.bcode_ridx_map.items()
-             if len(rows) > 0}
-        )
-
+        empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
         for _bc in _bc_list:
-            if _bc not in _bcidx:
-                msg = f'barcode "{_bc}" not in _bc_list, '
+            if _bc not in self.bcode_ridx_map:
                 if self.whitelist:
-                    msg += f'using whitelist {self.opts.whitelist}.'
+                    # If using whitelist, _bc_list may contain barcodes that
+                    # are not in self.bcode_ridx_map, since the latter only
+                    # contains barcodes for reads that align to the TE
+                    # annotation.
+                    counts_per_cell.append(empty_cell) # do we need copy()??
+                    continue
                 else:
+                    msg = f'barcode "{_bc}" not in _bc_list, '
                     msg += 'not using whitelist.'
-                raise StellarscopeError(msg)
-            if _bc in _bcidx:
-                _rows = _bcidx[_bc]
-                _I = row_identity_matrix(_rows, _assigned.shape[0])
-                _assigned_cell = _assigned.multiply(_I)
-                if self.opts.ignore_umi:
-                    _dense_cell_colsums = _assigned_cell.sum(0)
-                    _cell_colsums = _assigned_cell.colsums()
-                    assert _cell_colsums.check_equal(
-                        csr_matrix(_dense_cell_colsums))
+                    raise StellarscopeError(msg)
 
-                else:
-                    ''' Deduplicate UMIs'''
-                    pass  # code for UMI correction
-
-                counts_per_cell.append(_cell_colsums)
+            _rows = sorted(self.bcode_ridx_map[_bc])
+            _I = row_identity_matrix(_rows, _assigned.shape[0])
+            _assigned_cell = _assigned.multiply(_I)
+            _cell_colsums = _assigned_cell.colsums()
+            counts_per_cell.append(_cell_colsums)
 
         assert all(_.shape == (1, len(_ft_list)) for _ in counts_per_cell)
         assert len(counts_per_cell) == len(_bc_list)
 
-        count_mtx2 = scipy.sparse.vstack(counts_per_cell, dtype=mtx_dtype)
-
+        stacked = scipy.sparse.vstack(counts_per_cell, dtype=mtx_dtype)
+        count_mtx = self.opts.outfile_path('TE_counts_new.mtx')
+        scipy.io.mmwrite(count_mtx, stacked)
         lg.info('DEV IN PROGRESS')
 
         return
@@ -1289,7 +1605,7 @@ class Stellarscope(Telescope):
             for i, _bcode in enumerate(_allbc):
                 ''' If the barcode has reads that map to the annotation, sum the barcode's reads '''
                 if _bcode in _bcidx:
-                    _rows = _bcidx[_bcode]
+                    _rows = sorted(_bcidx[_bcode])
                     _umis = _bcumi[_bcode]
                     _cell_assignments = _assignments_lil[_rows, :]
                     _cell_final_assignments = _assignments[_rows, :].argmax(
@@ -1309,3 +1625,37 @@ class Stellarscope(Telescope):
 
             if _method == _rmethod:
                 scipy.io.mmwrite(counts_filename, _cell_count_matrix)
+
+    def print_summary(self, loglev=lg.WARNING):
+        _info = self.run_info
+
+        ''' Alignment summary '''
+        nmapped = _info['PM'] + _info['SM'] + _info['PX']
+        nunique = _info['nofeat_U'] + _info['feat_U']
+        nambig = _info['nofeat_A'] + _info['feat_A']
+        nfeat = _info["feat_U"] + _info["feat_A"]
+        lg.log(loglev, "Alignment Summary:")
+        lg.log(loglev, f'    {_info["total_fragments"]} total fragments.')
+        lg.log(loglev, f'        {_info["PM"]} mapped as pairs.')
+        lg.log(loglev, f'        {_info["PX"]} mapped as mixed.')
+        lg.log(loglev, f'        {_info["SM"]} mapped single.')
+        lg.log(loglev, f'        {_info["PU"] + _info["SU"]} failed to map.')
+        lg.log(loglev, '--')
+        lg.log(loglev, f'    {nmapped} mapped; of these')
+        lg.log(loglev, f'        {nunique} had one unique alignment.')
+        lg.log(loglev, f'        {nambig} had multiple alignments.')
+        lg.log(loglev, '--')
+        lg.log(loglev, f'    {nfeat} overlapped TE features; of these')
+        lg.log(loglev, f'        {_info["feat_U"]} map to one locus.')
+        lg.log(loglev, f'        {_info["feat_A"]} map to multiple loci.')
+        lg.log(loglev, '\n')
+        return
+
+    def __str__(self):
+        if hasattr(self.opts, 'samfile'):
+            return f'<Stellarscope samfile={self.opts.samfile}, gtffile={self.opts.gtffile}>'
+        elif hasattr(self.opts, 'checkpoint'):
+            return f'<Stellarscope checkpoint={self.opts.checkpoint}>'
+        else:
+            return '<Stellarscope>'
+

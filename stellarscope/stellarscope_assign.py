@@ -25,6 +25,7 @@ from .utils.helpers import format_minutes as fmtmins
 from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
 from .utils.model import Stellarscope, StellarscopeError
+from .utils import model
 from .utils.annotation import get_annotation_class
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
@@ -62,15 +63,16 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         ''' Initialise the z matrix for all reads '''
         z = lil_matrix(ts.raw_scores, dtype=np.float64)
         for barcode in ts.barcodes:
-            if barcode in ts.bcode_ridx_map:
-                _rows = ts.bcode_ridx_map[barcode]
-                ''' Create likelihood object using only reads from the cell '''
-                _cell_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
-                ts_model = TelescopeLikelihood(_cell_raw_scores, ts.opts)
-                ''' Run EM '''
-                ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
-                ''' Add estimated posterior probs to the final z matrix '''
-                z[_rows, :] = ts_model.z.tolil()
+            if barcode not in ts.bcode_ridx_map:
+                raise StellarscopeError(f'{barcode} missing from bcode_ridx_map')
+            _rows = sorted(ts.bcode_ridx_map[barcode])
+            ''' Create likelihood object using only reads from the cell '''
+            _cell_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
+            ts_model = TelescopeLikelihood(_cell_raw_scores, ts.opts)
+            ''' Run EM '''
+            ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
+            ''' Add estimated posterior probs to the final z matrix '''
+            z[_rows, :] = ts_model.z.tolil()
 
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ts_model.z = csr_matrix(z)
@@ -163,14 +165,27 @@ def run(args):
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
 
-    lg.info(f'Using pooling mode: {opts.pooling_mode}')
+    """ Multiple pooling modes
+    lg.info('Using pooling mode(s): %s' % ', '.join(opts.pooling_mode))
 
-    if opts.pooling_mode == 'celltype' and opts.celltype_tsv is None:
+    if 'celltype' in opts.pooling_mode and opts.celltype_tsv is None:
         msg = 'celltype_tsv is required for pooling mode "celltype"'
         raise StellarscopeError(msg)
-    if opts.pooling_mode != 'celltype' and opts.celltype_tsv:
-        msg = f'celltype_tsv is ignored for pooling mode "{opts.pooling_mode}"'
-        lg.info(msg)
+    if 'celltype' not in opts.pooling_mode and opts.celltype_tsv:
+        lg.info('celltype_tsv is ignored for selected pooling modes.')
+    """
+
+    """ Single pooling mode """
+    lg.info(f'Using pooling mode(s): {opts.pooling_mode}')
+
+    if opts.pooling_mode == 'celltype':
+        if opts.celltype_tsv is None:
+            msg = 'celltype_tsv is required for pooling mode "celltype"'
+            raise StellarscopeError(msg)
+    else:
+        if opts.celltype_tsv:
+            lg.info('celltype_tsv is ignored for selected pooling modes.')
+
 
     total_time = time()
 
@@ -195,12 +210,25 @@ def run(args):
 
     ''' Print alignment summary '''
     ts.print_summary(lg.INFO)
-    # if opts.ncpu > 1:
-    #     sys.exit('not implemented yet')
+
+    if opts.devmode:
+        dump_data(opts.outfile_path('00-uncorrected'), ts.raw_scores)
+
 
     ''' Free up memory used by annotation '''
     annot = None
     lg.debug('garbage: {:d}'.format(gc.collect()))
+
+    if opts.ignore_umi:
+        lg.info('Skipping UMI deduplication...')
+    else:
+        stime = time()
+        ts.dedup_umi()
+        lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
+
+        if opts.devmode:
+            dump_data(opts.outfile_path('01-corrected'), ts.raw_scores)
+            dump_data(opts.outfile_path('02-uncorrected'), ts.uncorrected)
 
     ''' Save object checkpoint '''
     ts.save(opts.outfile_path('checkpoint'))
@@ -216,13 +244,19 @@ def run(args):
 
     lg.info('Running Expectation-Maximization...')
     stime = time()
-    if opts.devmode:
-        dump_data(opts.outfile_path('rawscores_before_fit'), ts.raw_scores)
+    ts.barcodes = ts.bcode_ridx_map.keys()
     ts_model = fit_telescope_model(ts, opts)
+    lg.info("EM completed in %s" % fmtmins(time() - stime))
+
+
+    lg.info('Running Expectation-Maximization...')
+    stime = time()
+    st_model = model.fit_pooling_model(ts, opts)
     lg.info("EM completed in %s" % fmtmins(time() - stime))
     if opts.devmode:
         dump_data(opts.outfile_path('rawscores_after_fit'), ts.raw_scores)
-        dump_data(opts.outfile_path('probs_after_fit'), ts_model.z)
+        dump_data(opts.outfile_path('probs_after_fit_t'), ts_model.z)
+        dump_data(opts.outfile_path('probs_after_fit_s'), st_model.z)
 
     # Output final report
     lg.info("Generating Old Report...")
