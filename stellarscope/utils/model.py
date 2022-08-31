@@ -77,17 +77,6 @@ def process_overlap_frag(pairs, overlap_feats):
     return _maps
 
 
-# def _print_progress(nfrags, opts):
-#     mfrags = nfrags / 1e6
-#     msg = '...processed {:.1f}M fragments'.format(mfrags)
-#     print(f'\r{msg}', end='', file=opts.logfile)
-#     # lg.info(msg)
-#     # if nfrags % infolev == 0:
-#     #     # lg.info('\r')
-#     #     lg.info(msg)
-#     # else:
-#     #     lg.debug(msg)
-
 class Telescope(object):
     """
 
@@ -909,9 +898,9 @@ class Assigner:
 Stellarscope model
 """
 
-def select_umi_representatives(umi_feat_scores,
+def select_umi_representatives(umi_feat_scores: list[tuple(str, dict[int,int])],
                                best_score : bool = False
-                               ) -> (set[int] | set[str]):
+                               ) -> (list[str], list[bool]):
     """ Select best representative(s) among reads with same BC+UMI
 
     Parameters
@@ -925,9 +914,6 @@ def select_umi_representatives(umi_feat_scores,
     """
     ''' Unpack the list of tuples '''
     _labels, _score_vecs = list(zip(*umi_feat_scores))
-    # for label, vec in umi_feat_scores.items():
-    #     _labels.append(label)
-    #     _score_vecs.append(vec)
 
     ''' Subset each vector for top scores (optional) '''
     _subset_vecs = []
@@ -977,7 +963,7 @@ def select_umi_representatives(umi_feat_scores,
         reps.append(_labels[rep_index])
         is_excluded[rep_index] = False
 
-    return reps, is_excluded
+    return comps.tolist(), is_excluded
 
 def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
     def fit_pseudobulk(scoremat):
@@ -1382,7 +1368,7 @@ class Stellarscope(Telescope):
         return _mappings, alninfo
 
 
-    def dedup_umi(self):
+    def dedup_umi(self, output_report=True):
         """
 
         Returns
@@ -1390,8 +1376,11 @@ class Stellarscope(Telescope):
 
         """
         exclude_qnames: dict[str, int] = {}  # reads to be excluded
-        # duplicated_umis: dict[tuple[str, str], dict[str, set]] = {}
+        # duplicated_umis is redundant - could remove this if needed
         duplicated_umis = defaultdict(lambda: {'reps':[], 'exclude': []})
+
+        if output_report:
+            umiFH = open(self.opts.outfile_path('umi_tracking.txt'), 'w')
 
         ''' Index read names by barcode+umi '''
         bcumi_read = defaultdict(dict)
@@ -1407,9 +1396,6 @@ class Stellarscope(Telescope):
             if len(qnames) == 1: continue
 
             ''' multiple reads with same barcode+umi '''
-            # duplicated_umis[(bc, umi)] = {'reps': set(), 'exclude': set()}
-            # qnames_list = list(qnames)
-            # umi_feat_scores = {}
             umi_feat_scores = []
             for qname in qnames.keys():
                 row_m = self.raw_scores[self.read_index[qname], ]
@@ -1418,7 +1404,15 @@ class Stellarscope(Telescope):
                 _ = vec.pop(0, None)
                 umi_feat_scores.append((qname, vec))
 
-            reps, is_excluded = select_umi_representatives(umi_feat_scores)
+            comps, is_excluded = select_umi_representatives(umi_feat_scores)
+            if output_report:
+                print(f'{bc}\t{umi}', file=umiFH)
+                _iter = zip(comps, is_excluded, umi_feat_scores)
+                for comp, ex, (qname, vec) in _iter:
+                    exstr = 'EX' if ex else 'REP'
+                    # We could use feature names in the score vector and make
+                    # it look nicer. But this is OK for now.
+                    print(f'\t{qname}\t{comp}\t{exstr}\t{str(vec)}', file=umiFH)
 
             for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
                 if ex:
@@ -1426,6 +1420,9 @@ class Stellarscope(Telescope):
                     duplicated_umis[(bc, umi)]['exclude'].append(qname)
                 else:
                     duplicated_umis[(bc, umi)]['reps'].append(qname)
+
+        if output_report:
+            umiFH.close()
 
         ''' Remove excluded reads '''
         # sanity check
