@@ -898,9 +898,10 @@ class Assigner:
 Stellarscope model
 """
 
-def select_umi_representatives(umi_feat_scores: list[tuple(str, dict[int,int])],
-                               best_score : bool = False
-                               ) -> (list[str], list[bool]):
+def select_umi_representatives(
+        umi_feat_scores: list[tuple(str, dict[int,int])],
+        best_score : bool = False
+) -> (list[str], list[bool]):
     """ Select best representative(s) among reads with same BC+UMI
 
     Parameters
@@ -933,8 +934,6 @@ def select_umi_representatives(umi_feat_scores: list[tuple(str, dict[int,int])],
         graph[j, i] = sum(_subset_vecs[j][x] for x in inter)
 
     ncomp, comps = connected_components(graph, directed=False)
-    # if ncomp > 1:
-    #     lg.info('multiple components encountered')
 
     ''' Choose best read for each component.
         For each component:
@@ -965,28 +964,53 @@ def select_umi_representatives(umi_feat_scores: list[tuple(str, dict[int,int])],
 
     return comps.tolist(), is_excluded
 
-def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
+def fit_pooling_model(
+        st: Stellarscope,
+        opts: 'StellarscopeAssignOptions'
+) -> TelescopeLikelihood:
+    """
+
+    Parameters
+    ----------
+    st
+    opts
+
+    Returns
+    -------
+
+    """
     def fit_pseudobulk(scoremat):
         st_model = TelescopeLikelihood(scoremat, opts)
-        st_model.em(use_likelihood=opts.use_likelihood, loglev=lg.INFO)
+        st_model.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
         return st_model
 
     def fit_individual(scoremat):
-        z_mats = []
+        z_mats = [] # can remove?
+        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
             _I = row_identity_matrix(_rows, scoremat.shape[0])
             _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
+
             ''' Run EM '''
-            lg.info(f"Running EM for {_bcode}")
+            lg.debug(f"Running EM for {_bcode}")
             _submod.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
             z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
+            all_z += _submod.z
+
             log_likelihoods.append(_submod.lnl)
 
-        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
+        ''' Add matrices to get full matrix 
+            This is equivalent to updating/slicing since the nonzero elements
+            do not overlap for all pairs of subsets, i.e. each read is a member
+            of exactly one cell 
+        '''
+        all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
         for _z in z_mats:
-            all_z += _z
+            all_z_fromlist += _z
+
+        assert all_z_fromlist.check_equal(all_z)
 
         if opts.devmode:
             dump_data(opts.outfile_path('all_merged_z'), all_z)
@@ -996,8 +1020,45 @@ def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> Te
         st_model.lnl = sum(log_likelihoods)
         return st_model
 
-    def fit_celltype():
-        pass
+    def fit_celltype(scoremat):
+        z_mats = [] # can remove?
+        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
+        log_likelihoods = []
+        for _ctype in st.celltypes:
+            _rows = []
+            for _bcode in st.ctype_bcode_map[_ctype]:
+                _rows.extend(st.bcode_ridx_map[_bcode])
+            _rows.sort()
+            _I = row_identity_matrix(_rows, scoremat.shape[0])
+            _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
+
+            ''' Run EM '''
+            lg.debug(f"Running EM for {_ctype}")
+            _submod.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
+            z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
+            all_z += _submod.z
+
+            log_likelihoods.append(_submod.lnl)
+
+        ''' Add matrices to get full matrix 
+            This is equivalent to updating/slicing since the nonzero elements
+            do not overlap for all pairs of subsets, i.e. each read is a member
+            of exactly one cell 
+        '''
+        all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
+        for _z in z_mats:
+            all_z_fromlist += _z
+
+        assert all_z_fromlist.check_equal(all_z)
+
+        if opts.devmode:
+            dump_data(opts.outfile_path('all_merged_z'), all_z)
+
+        st_model = TelescopeLikelihood(scoremat, opts)
+        st_model.z = all_z_fromlist
+        st_model.lnl = sum(log_likelihoods)
+        return st_model
+
 
     ''' fit_pooling_model '''
     if opts.ignore_umi:
@@ -1013,7 +1074,7 @@ def fit_pooling_model(st: Stellarscope, opts: 'StellarscopeAssignOptions') -> Te
     elif opts.pooling_mode == 'pseudobulk':
         st_model = fit_pseudobulk(_scoremat)
     elif opts.pooling_mode == 'celltype':
-        st_model = fit_celltype()
+        st_model = fit_celltype(_scoremat)
     else:
         msg = f'Invalid pooling mode "{opts.pooling_mode}". '
         msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
@@ -1041,6 +1102,47 @@ class AlignmentValidationError(StellarscopeError):
 class Stellarscope(Telescope):
 
     def __init__(self, opts):
+        """
+
+        Parameters
+        ----------
+        opts
+        """
+
+        def load_celltype_file():
+            """ Load celltype assignments into Stellarscope object
+
+
+            Sets values for instance variables:
+                 `self.bcode_ctype_map`
+                 `self.ctype_bcode_map`
+                 `self.celltypes`
+                 `self.barcode_celltypes`
+
+            Returns
+            -------
+
+            """
+            lineparse = lambda l: tuple(map(str.strip, l.split('\t')[:2]))
+            with open(self.opts.celltype_tsv, 'r') as fh:
+                _gen = (lineparse(l) for l in fh)
+                # Check first line is valid barcode and not column header
+                _bc, _ct = next(_gen)
+                if re.match('^[ACGTacgt]+$', _bc):
+                    _ = self.bcode_ctype_map.setdefault(_bc, _ct)
+                    self.ctype_bcode_map[_ct].add(_bc)
+                # Add the rest without checking
+                for _bc, _ct in _gen:
+                    _ = self.bcode_ctype_map.setdefault(_bc, _ct)
+                    assert _ == _ct, f'Mismatch for {_bc}, "{_}" != "{_ct}"'
+                    self.ctype_bcode_map[_ct].add(_bc)
+
+            self.celltypes = sorted(set(self.bcode_ctype_map.values()))
+            self.barcode_celltypes = pd.DataFrame({
+                'barcode': self.bcode_ctype_map.keys(),
+                'celltype': self.bcode_ctype_map.values()
+            })
+            return
 
         super().__init__(opts)
         '''
@@ -1075,10 +1177,13 @@ class Stellarscope(Telescope):
         self.whitelist = {}                      # {barcode (str): index (int)}
 
         ''' Instance variables for pooling mode = "celltype" '''
-        self.bcode_ctype_map = {}  # {barcode (str): celltype (str)}
-        self.celltypes = {}  # {celltype (str): index (int)}
+        self.bcode_ctype_map: dict[str,str] = {}
+        self.ctype_bcode_map = defaultdict(set)
+        self.celltypes: list[str] = []
         # NOTE: we could reduce the size of the barcode-celltype map by
-        #       indexing the celltypes
+        #       indexing the celltypes.
+        # *this would not actually reduce the size because python strings
+        #  are immutable and use string interning
 
         # NOTE: is this redundant with the barcode-celltype map?
         self.barcode_celltypes = None  # pd.DataFrame, barcode, celltype
@@ -1092,13 +1197,14 @@ class Stellarscope(Telescope):
 
         ''' Load celltype assignments '''
         if opts.pooling_mode == 'celltype':
-            self.bcode_ctype_map = self._load_celltype_file()
-            self.celltypes = sorted(set(self.bcode_ctype_map.values()))
-            self.barcode_celltypes = pd.DataFrame({
-                'barcode': self.bcode_ctype_map.keys(),
-                'celltype': self.bcode_ctype_map.values()
-            })
+            load_celltype_file()
             lg.info(f'{len(self.celltypes)} unique celltypes found.')
+            # self.celltypes = sorted(set(self.bcode_ctype_map.values()))
+            # self.barcode_celltypes = pd.DataFrame({
+            #     'barcode': self.bcode_ctype_map.keys(),
+            #     'celltype': self.bcode_ctype_map.values()
+            # })
+
 
         return
 
@@ -1115,25 +1221,7 @@ class Stellarscope(Telescope):
                 _ = _ret.setdefault(_bc, len(_ret))
         return _ret
 
-    def _load_celltype_file(self):
-        if not self.opts.celltype_tsv:
-            msg = 'celltype_tsv is required for pooling mode "celltype"'
-            msg += '\n(in Stellarscope.__init__)'
-            msg += '\nShould be checked during argument validation'
-            raise StellarscopeError(msg)
 
-        _ret = {}
-        with open(self.opts.celltype_tsv, 'r') as fh:
-            _ct_gen = (tuple(map(str.strip, l.split('\t')[:2])) for l in fh)
-            # Check first line is valid barcode and not column header
-            _bc, _ct = next(_ct_gen)
-            if re.match('^[ACGTacgt]+$', _bc):
-                _ = _ret.setdefault(_bc, _ct)
-            # Add the rest without checking
-            for _bc, _ct in _ct_gen:
-                _ = _ret.setdefault(_bc, _ct)
-                assert _ == _ct, f'Cell type mismatch for {_bc}, "{_}" != "{_ct}"'
-        return _ret
 
     def load_alignment(self, annotation: annotation.BaseAnnotation):
         """
@@ -1151,7 +1239,7 @@ class Stellarscope(Telescope):
             self.shape = (len(self.read_index), len(self.feat_index))
 
             # rescale function to positive integers > 0
-            lg.info(f'score range: ({alninfo["minAS"]}, {alninfo["maxAS"]})')
+            lg.debug(f'score range: ({alninfo["minAS"]}, {alninfo["maxAS"]})')
             rescale = lambda s: (s - alninfo['minAS'] + 1)
 
             _m_dok = scipy.sparse.dok_matrix(self.shape, dtype=np.uint16)
