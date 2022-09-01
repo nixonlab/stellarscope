@@ -82,7 +82,7 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
         ''' Create likelihood '''
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ''' Run Expectation-Maximization '''
-        ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.INFO)
+        ts_model.em(use_likelihood=ts.opts.use_likelihood, loglev=lg.DEBUG)
 
     elif opts.pooling_mode == 'celltype':
         celltype_z_list = []
@@ -253,17 +253,18 @@ def run(args):
     lg.info("Random seed: {}".format(seed))
     np.random.seed(seed)
 
-    lg.info('Running Expectation-Maximization...')
+    lg.info('Fitting model (fit_telescope_model)')
     stime = time()
     st_obj.barcodes = st_obj.bcode_ridx_map.keys()
     ts_model = fit_telescope_model(st_obj, opts)
-    lg.info("EM completed in %s" % fmtmins(time() - stime))
+    lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
 
-    lg.info('Running Expectation-Maximization...')
+    lg.info('Fitting model (fit_pooling_model)')
     stime = time()
     st_model = model.fit_pooling_model(st_obj, opts)
-    lg.info("EM completed in %s" % fmtmins(time() - stime))
+    lg.info("Fitting completed in %s" % fmtmins(time() - stime))
+
     if opts.devmode:
         dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)
         dump_data(opts.outfile_path('02-corrected'), st_obj.corrected)
