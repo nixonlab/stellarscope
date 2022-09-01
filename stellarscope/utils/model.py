@@ -684,18 +684,11 @@ class TelescopeLikelihood(object):
                 E(z[i,j]) = ( pi[j] * theta[j]**Y[i] * Q[i,j] ) /
         """
         lg.debug('started e-step')
-
-        # New way:
-        # _n = self.Q.copy()
-        # _rowiter = zip(_n.indptr[:-1], _n.indptr[1:], self.Y[:, 0])
-        # for d_start, d_end, indicator in _rowiter:
-        #     _cidx = _n.indices[d_start:d_end]
-        #     if indicator == 1:
-        #         _n.data[d_start:d_end] *= (pi[_cidx] * theta[_cidx])
-        #     else:
-        #         _n.data[d_start:d_end] *= pi[_cidx]
-        # Newer way
-        _amb = self.Q.multiply(self.Y).multiply(pi * theta)
+        try:
+            _amb = self.Q.multiply(self.Y).multiply(pi * theta)
+        except FloatingPointError:
+            lg.debug('using extended precision')
+            _amb = self.Q.multiply(self.Y).multiply(np.longdouble(pi) * np.longdouble(theta))
         _uni = self.Q.multiply(1 - self.Y).multiply(pi)
         _n = _amb + _uni
 
@@ -717,26 +710,33 @@ class TelescopeLikelihood(object):
         # Estimate pi_hat
         _pisum = self._pisum0 + _thetasum
         _pi_denom = self._total_wt + self._pi_prior_wt * self.K
-        _pi_hat = (_pisum + self._pi_prior_wt) / _pi_denom
+        try:
+            _pi_hat = (_pisum + self._pi_prior_wt) / _pi_denom
+        except FloatingPointError:
+            lg.debug('using extended precision')
+            _pi_hat = np.longdouble(_pisum + self._pi_prior_wt) / np.longdouble(_pi_denom)
 
         return _pi_hat.A1, _theta_hat.A1
 
     def calculate_lnl(self, z, pi, theta):
-        lg.debug('started lnl')
-        # _inner = self.Q.copy()
-        # _rowiter = zip(_inner.indptr[:-1], _inner.indptr[1:], self.Y[:, 0])
-        # for d_start, d_end, indicator in _rowiter:
-        #     _cidx =  _inner.indices[d_start:d_end]
-        #     if indicator == 1:
-        #         _inner.data[d_start:d_end] *= (pi[_cidx] * theta[_cidx])
-        #     else:
-        #         _inner.data[d_start:d_end] *= pi[_cidx]
-        #
+        """
+
+        Parameters
+        ----------
+        z
+        pi
+        theta
+
+        Returns
+        -------
+
+        """
+        lg.debug('CALL: TelescopeLikelihood.calculate_lnl()')
         _amb = self.Q.multiply(self.Y).multiply(pi * theta)
         _uni = self.Q.multiply(1 - self.Y).multiply(pi)
         _inner = csr_matrix(_amb + _uni)
         cur = z.multiply(_inner.log1p()).sum()
-        lg.debug('completed lnl')
+        lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
         return cur
 
     def em(self, use_likelihood=False, loglev=lg.WARNING, save_memory=True):
@@ -1026,9 +1026,16 @@ def fit_pooling_model(
         log_likelihoods = []
         for _ctype in st.celltypes:
             _rows = []
+
+            ''' Get read indexes for each barcode in cell '''
             for _bcode in st.ctype_bcode_map[_ctype]:
-                _rows.extend(st.bcode_ridx_map[_bcode])
-            _rows.sort()
+                if _bcode in st.bcode_ridx_map:
+                    _rows.extend(st.bcode_ridx_map[_bcode])
+
+            ''' No reads for this celltype '''
+            if not _rows: continue
+
+            _rows.sort()  # QUESTION: do we need this?
             _I = row_identity_matrix(_rows, scoremat.shape[0])
             _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
 

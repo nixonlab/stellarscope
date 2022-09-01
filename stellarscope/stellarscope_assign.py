@@ -93,7 +93,7 @@ def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> 
 
             if celltype_barcodes:
 
-                _rows = np.unique(np.concatenate([ts.bcode_ridx_map[bc] for bc in celltype_barcodes]))
+                _rows = np.unique(np.concatenate([list(ts.bcode_ridx_map[bc]) for bc in celltype_barcodes]))
 
                 # celltype identity matrix with 1 where row belongs to celltype
                 '''
@@ -164,6 +164,13 @@ def run(args):
     opts = option_class(args)
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
+
+    ''' Raise floating point errors
+        Floating point errors (division by zero, overflow, underflow, etc.) are
+        not ignored and need to be handled.
+    '''
+    np.seterr(all='raise')
+
 
     """ Multiple pooling modes
     lg.info('Using pooling mode(s): %s' % ', '.join(opts.pooling_mode))

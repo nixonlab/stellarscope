@@ -91,6 +91,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         return self._scale(axis)
 
     def _scale(self, axis=None):
+        if self.nnz == 0: return self
         if axis is None:
             return self.multiply(1. / self.max())
             # ret = self.copy().astype(np.float)
