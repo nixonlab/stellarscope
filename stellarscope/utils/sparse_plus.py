@@ -2,6 +2,7 @@
 """ Provides sparse matrix classes augmented with additional functions
 """
 from __future__ import division
+from __future__ import annotations
 
 from future import standard_library
 standard_library.install_aliases()
@@ -171,11 +172,36 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         return type(self)(super().multiply(other))
 
 
-    def colsums(self):
-        # use
-        _dense_colsums = self.sum(0)
-        return type(self)(_dense_colsums)
+    def colsums(self) -> csr_matrix_plus:
+        """ Sum columns and return as `csr_matrix_plus`
 
+        Returns
+        -------
+
+        """
+        _colsums = self.sum(0)
+        return type(self)(_colsums)
+
+    def colsums_nodense(self) -> csr_matrix_plus:
+        """ Sum columns and return as `csr_matrix_plus`
+
+        This (might) save memory by avoiding `scipy.sparse.spmatrix.sum`,
+        which returns a dense np.matrix. However, initial testing shows that
+        this implementation may be more than 10 times slower than using the
+        `spmatrix.sum` function.
+
+        Returns
+        -------
+
+        """
+        _csc = self.tocsc()
+        _dok = scipy.sparse.dok_matrix((1, self.shape[1]), dtype=self.dtype)
+
+        for i in range(self.shape[1]):
+            if _csc.indptr[i] ==_csc.indptr[i + 1]:
+                continue
+            _dok[0, i] = sum(_csc.data[_csc.indptr[i]:_csc.indptr[i + 1]])
+        return type(self)(_dok)
 
     def save(self, filename):
         np.savez(filename, data=self.data, indices=self.indices,
