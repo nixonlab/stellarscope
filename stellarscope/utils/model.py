@@ -683,7 +683,7 @@ class TelescopeLikelihood(object):
         """ Calculate the expected values of z
                 E(z[i,j]) = ( pi[j] * theta[j]**Y[i] * Q[i,j] ) /
         """
-        lg.debug('started e-step')
+        lg.debug('CALL: TelescopeLikelihood.estep()')
         try:
             _amb = self.Q.multiply(self.Y).multiply(pi * theta)
         except FloatingPointError:
@@ -693,13 +693,14 @@ class TelescopeLikelihood(object):
         _uni = self.Q.multiply(1 - self.Y).multiply(pi)
         _n = _amb + _uni
 
+        lg.debug('EXIT: TelescopeLikelihood.estep()')
         return _n.norm(1)
 
     def mstep(self, z):
         """ Calculate the maximum a posteriori (MAP) estimates for pi and theta
 
         """
-        lg.debug('started m-step')
+        lg.debug('CALL: TelescopeLikelihood.mstep()')
         # The expected values of z weighted by mapping score
         _weighted = z.multiply(self._weights)
 
@@ -719,6 +720,7 @@ class TelescopeLikelihood(object):
             _longdenom = np.longdouble(_pi_denom)
             _pi_hat = _longnum / _longdenom
 
+        lg.debug('EXIT: TelescopeLikelihood.mstep()')
         return _pi_hat.A1, _theta_hat.A1
 
     def calculate_lnl(self, z, pi, theta):
@@ -742,7 +744,7 @@ class TelescopeLikelihood(object):
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
         return cur
 
-    def em(self, use_likelihood=False, loglev=lg.WARNING, save_memory=True):
+    def em(self, use_likelihood=False, loglev=lg.DEBUG):
         inum = 0               # Iteration number
         converged = False      # Has convergence been reached?
         reached_max = False    # Has max number of iterations been reached?
@@ -777,15 +779,15 @@ class TelescopeLikelihood(object):
             reached_max = inum >= self.max_iter
             self.z = _z
             self.pi, self.theta = _pi, _theta
-            lg.debug("time: {}".format(perf_counter()-xtime))
+            lg.log(loglev, "time: {}".format(perf_counter()-xtime))
 
         _con = 'converged' if converged else 'terminated'
         if not use_likelihood:
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
 
 
-        lg.log(loglev, 'EM {:s} after {:d} iterations.'.format(_con, inum))
-        lg.log(loglev, 'Final log-likelihood: {:f}.'.format(self.lnl))
+        lg.log(loglev, f'EM {_con} after {inum:d} iterations.')
+        lg.log(loglev, f'Final log-likelihood: {self.lnl:f}.')
         return
 
     def reassign(self, method, thresh=0.9, initial=False):
@@ -984,7 +986,7 @@ def fit_pooling_model(
     """
     def fit_pseudobulk(scoremat):
         st_model = TelescopeLikelihood(scoremat, opts)
-        st_model.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
+        st_model.em(use_likelihood=opts.use_likelihood)
         return st_model
 
     def fit_individual(scoremat):
@@ -998,7 +1000,7 @@ def fit_pooling_model(
 
             ''' Run EM '''
             lg.debug(f"Running EM for {_bcode}")
-            _submod.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
+            _submod.em(use_likelihood=opts.use_likelihood)
             z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
             all_z += _submod.z
 
@@ -1044,7 +1046,7 @@ def fit_pooling_model(
 
             ''' Run EM '''
             lg.debug(f"Running EM for {_ctype}")
-            _submod.em(use_likelihood=opts.use_likelihood, loglev=lg.DEBUG)
+            _submod.em(use_likelihood=opts.use_likelihood)
             z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
             all_z += _submod.z
 
