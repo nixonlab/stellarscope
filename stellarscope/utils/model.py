@@ -1460,7 +1460,7 @@ class Stellarscope(Telescope):
                     [p.write(bam_t) for p in alns]
 
         ''' Loading complete '''
-        lg.info('\nLoading alignments complete.')
+        lg.info('Loading alignments complete.')
         if self.opts.updated_sam:
             bam_u.close()
             bam_t.close()
@@ -1655,8 +1655,6 @@ class Stellarscope(Telescope):
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('final_count_matrix'), stacked)
         scipy.io.mmwrite(count_mtx, stacked)
-        lg.info('DEV IN PROGRESS')
-
         return
 
     def output_report_old(self, tl, stats_filename, counts_filename,
@@ -1781,7 +1779,7 @@ class Stellarscope(Telescope):
         lg.log(loglev, f'    {nfeat} overlapped TE features; of these')
         lg.log(loglev, f'        {_info["feat_U"]} map to one locus.')
         lg.log(loglev, f'        {_info["feat_A"]} map to multiple loci.')
-        lg.log(loglev, '\n')
+        lg.log(loglev, '')
         return
 
     def __str__(self):

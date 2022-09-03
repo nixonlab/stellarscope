@@ -1,0 +1,19 @@
+name: stellarscope
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python >=3.6
+  - future
+  - pip
+  - pyyaml
+  - cython
+  - numpy
+  - scipy
+  - pysam >=0.19
+  - htslib
+  - intervaltree
+  - pandas
+  - samtools
+  - pip
