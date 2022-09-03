@@ -67,6 +67,10 @@ class OptionsBase(object):
                     continue
 
                 if 'type' in _d:
+                    if _d['type'] == 'csv':
+                        _d['type'] = 'str'
+                        _d.pop('default', None)
+                        _d.pop('choices', None)
                     _d['type'] = eval(_d['type'])
 
 

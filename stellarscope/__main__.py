@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-""" Main functionality of Telescope
+""" Stellarscope driver
 
 """
 from __future__ import absolute_import
@@ -10,6 +10,8 @@ import os
 import argparse
 import errno
 
+import numpy as np
+
 from stellarscope import __version__
 from . import stellarscope_cellsort
 from . import stellarscope_assign
@@ -18,6 +20,14 @@ from . import stellarscope_resume
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
+
+
+''' Raise floating point errors
+    Floating point errors (division by zero, overflow, underflow, etc.) are
+    not ignored and need to be handled.
+'''
+np.seterr(all='raise')
+
 
 def generate_test_command(args, singlecell = False):
     try:
@@ -58,6 +68,12 @@ The most commonly used commands are:
     assign    Reassign ambiguous fragments that map to repetitive elements
 '''
 
+class StellarscopeHelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter,
+    argparse.RawTextHelpFormatter
+):
+    pass
+
 def stellarscope():
     parser = argparse.ArgumentParser(
         description='''
@@ -82,7 +98,7 @@ def stellarscope():
     assign_parser = subparsers.add_parser(
         'assign',
         description='''Reassign ambiguous fragments that map to repetitive elements (scRNA-seq)''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=StellarscopeHelpFormatter,
     )
     stellarscope_assign.StellarscopeAssignOptions.add_arguments(assign_parser)
     assign_parser.set_defaults(func=stellarscope_assign.run)

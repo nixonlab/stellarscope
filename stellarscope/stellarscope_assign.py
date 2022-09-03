@@ -138,8 +138,31 @@ class StellarscopeAssignOptions(utils.OptionsBase):
     OPTS = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_assign.yaml')
 
     def __init__(self, args):
+        """
+
+        Parameters
+        ----------
+        args
+        """
+        def validate_csv(_optname, _val, _opt_d):
+            _vallist = _val.split(',')
+            if 'choices' in _opt_d:
+                all_valid = all(v in _opt_d['choices'] for v in _vallist)
+                if not all_valid:
+                    msg = f'Invalid argument for `{_optname}`: {_val}. '
+                    msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+                    raise StellarscopeError(msg)
+            return _vallist
 
         super().__init__(args)
+
+        ''' Validate command-line args '''
+        for optgroup in self.opt_groups:
+            for optname, opt_d in self.opt_groups[optgroup].items():
+                if 'type' in opt_d and opt_d['type'] == 'csv':
+                    val = getattr(self, optname)
+                    vallist = validate_csv(optname, val, opt_d)
+                    setattr(self, optname, vallist)
 
         if hasattr(self, 'tempdir') and self.tempdir is None:
             if hasattr(self, 'ncpu') and self.ncpu > 1:
@@ -160,17 +183,9 @@ def run(args):
     Returns:
 
     """
-    option_class = StellarscopeAssignOptions
-    opts = option_class(args)
+    opts = StellarscopeAssignOptions(args)
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
-
-    ''' Raise floating point errors
-        Floating point errors (division by zero, overflow, underflow, etc.) are
-        not ignored and need to be handled.
-    '''
-    np.seterr(all='raise')
-
 
     """ Multiple pooling modes
     lg.info('Using pooling mode(s): %s' % ', '.join(opts.pooling_mode))

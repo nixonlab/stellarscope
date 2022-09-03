@@ -688,7 +688,8 @@ class TelescopeLikelihood(object):
             _amb = self.Q.multiply(self.Y).multiply(pi * theta)
         except FloatingPointError:
             lg.debug('using extended precision')
-            _amb = self.Q.multiply(self.Y).multiply(np.longdouble(pi) * np.longdouble(theta))
+            _long_pitheta = np.longdouble(pi) * np.longdouble(theta)
+            _amb = self.Q.multiply(self.Y).multiply(_long_pitheta)
         _uni = self.Q.multiply(1 - self.Y).multiply(pi)
         _n = _amb + _uni
 
@@ -714,7 +715,9 @@ class TelescopeLikelihood(object):
             _pi_hat = (_pisum + self._pi_prior_wt) / _pi_denom
         except FloatingPointError:
             lg.debug('using extended precision')
-            _pi_hat = np.longdouble(_pisum + self._pi_prior_wt) / np.longdouble(_pi_denom)
+            _longnum = np.longdouble(_pisum + self._pi_prior_wt)
+            _longdenom = np.longdouble(_pi_denom)
+            _pi_hat = _longnum / _longdenom
 
         return _pi_hat.A1, _theta_hat.A1
 
