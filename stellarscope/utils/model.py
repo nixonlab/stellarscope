@@ -1623,10 +1623,11 @@ class Stellarscope(Telescope):
         else:
             mtx_dtype = np.uint16
 
-        counts_per_cell = []
+        
 
         ''' Aggregate by barcode '''
-        empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
+        _bc_counts = []
+        _empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
         for _bc in _bc_list:
             if _bc not in self.bcode_ridx_map:
                 if self.whitelist:
@@ -1634,7 +1635,7 @@ class Stellarscope(Telescope):
                     # are not in self.bcode_ridx_map, since the latter only
                     # contains barcodes for reads that align to the TE
                     # annotation.
-                    counts_per_cell.append(empty_cell) # do we need copy()??
+                    _bc_counts.append(_empty_cell)
                     continue
                 else:
                     msg = f'barcode "{_bc}" not in _bc_list, '
@@ -1645,16 +1646,20 @@ class Stellarscope(Telescope):
             _I = row_identity_matrix(_rows, _assigned.shape[0])
             _assigned_cell = _assigned.multiply(_I)
             _cell_colsums = _assigned_cell.colsums()
-            counts_per_cell.append(_cell_colsums)
+            _bc_counts.append(_cell_colsums)
 
-        assert all(_.shape == (1, len(_ft_list)) for _ in counts_per_cell)
-        assert len(counts_per_cell) == len(_bc_list)
+        assert all(_.shape == (1, len(_ft_list)) for _ in _bc_counts)
+        assert len(_bc_counts) == len(_bc_list)
 
-        stacked = scipy.sparse.vstack(counts_per_cell, dtype=mtx_dtype)
-        count_mtx = self.opts.outfile_path('TE_counts_new.mtx')
+        ''' Write counts to MTX '''
+        tstacked = scipy.sparse.vstack(_bc_counts, dtype=mtx_dtype).transpose()
+
+        _count_mtx = self.opts.outfile_path('TE_counts.mtx')
+        scipy.io.mmwrite(_count_mtx, tstacked)
+
         if self.opts.devmode:
-            dump_data(self.opts.outfile_path('final_count_matrix'), stacked)
-        scipy.io.mmwrite(count_mtx, stacked)
+            dump_data(self.opts.outfile_path('final_count_matrix'), tstacked)
+
         return
 
     def output_report_old(self, tl, stats_filename, counts_filename,
