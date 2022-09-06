@@ -1621,9 +1621,7 @@ class Stellarscope(Telescope):
         if self.opts.reassign_mode == 'average':
             mtx_dtype = np.float64
         else:
-            mtx_dtype = np.uint16
-
-        
+            mtx_dtype = np.int
 
         ''' Aggregate by barcode '''
         _bc_counts = []
@@ -1654,8 +1652,20 @@ class Stellarscope(Telescope):
         ''' Write counts to MTX '''
         tstacked = scipy.sparse.vstack(_bc_counts, dtype=mtx_dtype).transpose()
 
-        _count_mtx = self.opts.outfile_path('TE_counts.mtx')
-        scipy.io.mmwrite(_count_mtx, tstacked)
+        scipy.io.mmwrite(
+            self.opts.outfile_path('TE_counts.mtx'),
+            tstacked,
+            comment = '\n'.join([
+                ' PN:\tstellarscope',
+                f' VN:\t{self.opts.version}',
+                f' samfile:\t{self.opts.samfile}',
+                f' gtffile:\t{self.opts.gtffile}',
+                f' whitelist:\t{self.opts.whitelist}',
+                f' pooling_mode:\t{self.opts.pooling_mode}',
+                f' reassign_mode:\t{self.opts.reassign_mode}',
+                f' command:\t{" ".join(sys.argv)}',
+            ])
+        )
 
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('final_count_matrix'), tstacked)
