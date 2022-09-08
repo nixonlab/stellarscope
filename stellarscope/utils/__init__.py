@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-import yaml
-import os
-import logging
-from collections import OrderedDict
-# These are needed for eval statements:
 import sys
+import os
+import yaml
+import logging
+import hashlib
+import typing
+from collections import OrderedDict
+
+# Does not appear to be used but needed for eval statements:
 import argparse
-import tempfile
-import atexit
-import shutil
 
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
 
 
 class OptionsBase(object):
@@ -24,8 +24,6 @@ class OptionsBase(object):
     Recommended usage is to subclass this for each subcommand by changing the
     OPTS class variable. OPTS is a YAML string that is parsed on initialization
     and contains data that can be passed to `ArgumentParser.add_argument()`.
-
-
     """
 
     OPTS = """
@@ -50,11 +48,6 @@ class OptionsBase(object):
         # default for logfile
         if hasattr(self, 'logfile') and self.logfile is None:
             self.logfile = sys.stderr
-        #
-        # # default for tempdir
-        # if hasattr(self, 'tempdir') and self.tempdir is None:
-        #     self.tempdir = tempfile.mkdtemp()
-        #     atexit.register(shutil.rmtree, self.tempdir)
 
     @classmethod
     def add_arguments(cls, parser):
@@ -148,17 +141,29 @@ def configure_logging(opts):
                         stream=opts.logfile)
     return
 
-import time
-def human_format(num):
-    """ Format number to human readable format.
 
-    From https://stackoverflow.com/questions/579310/formatting-long-numbers-as-strings-in-python
+def human_format(num: int) -> str:
+    """ Format integer to human readable format using SI suffixes.
 
-    Args:
-        num:
+    From `StackOverflow answer 579376`_
 
-    Returns:
+    Parameters
+    ----------
+    num : int
+        number to be reformatted
 
+    Returns
+    -------
+    str
+        reformatted number as string
+
+    Examples
+    --------
+    >>> human_format(2356743467)
+    '2.4G'
+
+    .. _StackOverflow answer 579376:
+        https://stackoverflow.com/a/579376
     """
     magnitude = 0
     while abs(num) >= 1000:
@@ -167,11 +172,60 @@ def human_format(num):
     # add more suffixes if you need them
     return '%.1f%s' % (num, ['', 'K', 'M', 'G', 'T', 'P'][magnitude])
 
-def log_progress(nfrags, overwrite=True):
+
+def log_progress(nfrags: int, overwrite: bool = True) -> None:
+    """
+
+    Parameters
+    ----------
+    nfrags : int
+        Number of fragments processed
+    overwrite : bool, default=True
+        Whether to overwrite progress message
+
+    Returns
+    -------
+    None
+    """
     prev = logging.StreamHandler.terminator
     if overwrite: logging.StreamHandler.terminator = '\r'
+
     logging.info(f'...processed {human_format(nfrags)} fragments')
-    logging.StreamHandler.terminator = prev
+
+    if overwrite: logging.StreamHandler.terminator = prev
+
+    return
 
 # A very large integer
 BIG_INT = 2**32 - 1
+
+
+def md5sum_head(
+        filename: typing.Union[str, bytes, os.PathLike],
+        maxsize: float = 1e9
+) -> str:
+    """ Calculate md5sum for file.
+
+    Calculates the md5sum for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used.
+
+    Parameters
+    ----------
+    filename : typing.Union[str, bytes, os.PathLike]
+        Path to file
+    maxsize : float, default=1e9
+        Maximum number of bytes to read
+
+    Returns
+    -------
+    str
+        md5 digest as string of hexadecimal digits
+    """
+    filesize = os.path.getsize(filename)
+    if filesize < maxsize:
+        with open(filename, 'rb') as fh:
+            ret = hashlib.md5(fh.read()).hexdigest()
+    else:
+        with open(filename, 'rb') as fh:
+            ret = hashlib.md5(fh.read(int(maxsize))).hexdigest()
+    return ret
