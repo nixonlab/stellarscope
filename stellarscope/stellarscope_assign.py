@@ -145,13 +145,14 @@ class StellarscopeAssignOptions(utils.OptionsBase):
         args
         """
         def validate_csv(_optname, _val, _opt_d):
+            if 'choices' not in _opt_d:
+                return _val.split(',') # valid options not provided
+
             _vallist = _val.split(',')
-            if 'choices' in _opt_d:
-                all_valid = all(v in _opt_d['choices'] for v in _vallist)
-                if not all_valid:
-                    msg = f'Invalid argument for `{_optname}`: {_val}. '
-                    msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
-                    raise StellarscopeError(msg)
+            if not all(v in _opt_d['choices'] for v in _vallist):
+                msg = f'Invalid argument for `{_optname}`: {_val}. '
+                msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+                raise StellarscopeError(msg)
             return _vallist
 
         super().__init__(args)
@@ -164,6 +165,19 @@ class StellarscopeAssignOptions(utils.OptionsBase):
                     vallist = validate_csv(optname, val, opt_d)
                     setattr(self, optname, vallist)
 
+        # Validate conf_prob
+        if not (0.5 < self.conf_prob <= 1.0):
+            msg = 'Confidence threshold "--conf_prob" must be in range '
+            msg += '(0.5, 1.0].'
+            raise StellarscopeError(msg)
+
+        # Add all reassignment modes
+        if self.use_every_reassign_mode:
+            for m in TelescopeLikelihood.REASSIGN_MODES:
+                if m not in self.reassign_mode:
+                    self.reassign_mode.append(m)
+
+        # Set tempdir
         if hasattr(self, 'tempdir') and self.tempdir is None:
             if hasattr(self, 'ncpu') and self.ncpu > 1:
                 self.tempdir = tempfile.mkdtemp()

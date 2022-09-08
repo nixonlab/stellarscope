@@ -2,7 +2,7 @@
 from __future__ import print_function, annotations
 from __future__ import absolute_import
 
-from typing import List, Any
+from typing import Optional, List, Any
 
 from past.utils import old_div
 
@@ -15,6 +15,7 @@ from collections import OrderedDict, defaultdict, Counter
 from multiprocessing import Pool
 import functools
 import itertools
+import warnings
 
 import numpy as np
 import scipy
@@ -463,7 +464,7 @@ class Telescope(object):
     """
 
     def output_report(self, tl, stats_filename, counts_filename):
-        _rmethod, _rprob = self.opts.reassign_mode, self.opts.conf_prob
+        _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
         _stats_rounding = pd.Series([2, 3, 2, 3],
@@ -519,7 +520,7 @@ class Telescope(object):
         return
 
     def update_sam(self, tl, filename):
-        _rmethod, _rprob = self.opts.reassign_mode, self.opts.conf_prob
+        _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
 
         mat = csr_matrix(tl.reassign(_rmethod, _rprob))
@@ -612,6 +613,17 @@ class TelescopeLikelihood(object):
     """
 
     """
+    ''' Reassignment modes '''
+    REASSIGN_MODES = [
+        'best_exclude',
+        'best_conf',
+        'best_random',
+        'best_average',
+        'initial_unique',
+        'initial_random',
+        'total_hits'
+    ]
+
     def __init__(self, score_matrix, opts):
         """
         """
@@ -790,64 +802,103 @@ class TelescopeLikelihood(object):
         lg.log(loglev, f'Final log-likelihood: {self.lnl:f}.')
         return
 
-    def reassign(self, method, thresh=0.9, initial=False):
-        """ Reassign fragments to expected transcripts
+    def reassign(self,
+                 mode: str,
+                 thresh: Optional[float] = None
+    ) -> csr_matrix:
+        """Reassign fragments to expected transcripts
 
-        Running EM finds the expected fragment assignment weights at the MAP
-        estimates of pi and theta. This function reassigns all fragments based
-        on these assignment weights. A simple heuristic is to assign each
-        fragment to the transcript with the highest assignment weight.
+        Model fitting using EM finds the expected fragment assignment weights
+        - posterior probabilites (PP) - at the MAP estimates of pi and theta.
+        This function reassigns each fragment so that the most likely
+        originating transcript has a weight of 1. In practice, not all
+        fragments result have exactly one best hit, even after fitting. The
+        "mode" argument defines how we deal with ties.
 
-        In practice, not all fragments have exactly one best hit. The "method"
-        argument defines how we deal with fragments that are not fully resolved
-        after EM:
-                exclude - reads with > 1 best hits are excluded
-                choose  - one of the best hits is randomly chosen
-                average - read is evenly divided among best hits
-                conf    - only confident reads are reassigned
-                unique  - only uniquely aligned reads
-                all     - assigns reads to all aligned loci
-        Args:
-            method:
-            thresh:
-            iteration:
+        In the first four modes, the alignment with the highest PP is selected.
+        If multiple alignments have the same highest PP, ties are broken by:
+            "best_exclude"   - the read is excluded and does not contribute to
+                               the final count.
+            "best_conf"      - only alignments with PP exceeding a user-defined
+                               threshold are included. We require the threshold
+                               to be greater than 0.5, so ties do not occur.
+            "best_random"    - one of the best alignments is randomly selected.
+            "best_average"   - final count is evenly divided among the best
+                               alignments. This results in fractional weights
+                               and the final count is not a true count.
 
-        Returns:
-            matrix where m[i,j] == 1 iff read i is reassigned to transcript j
+        The final three modes do not perform reassignment or model fitting
+        but are included for comparison:
+            "initial_unique" - only reads that align uniquely to a single
+                               locus are included, multimappers are discarded.
+                               EM model optimization is not considered, similar
+                               to the "unique counts" approach.
+            "initial_random" - alignment is randomly chosen from among the
+                               set of best scoring alignments. EM model
+                               optimization is not considered, similar to the
+                               "best counts" approach.
+            "total_hits"     - every alignment has a weight of 1. Counts the
+                               number of initial alignments to each locus.
 
+        Parameters
+        ----------
+        mode
+        thresh
+
+        Returns
+        -------
+        csr_matrix
+            Sparse CSR matrix where m[i,j] == 1 iff read i is reassigned to
+            transcript j.
         """
-        if method not in ['exclude', 'choose', 'average', 'conf', 'unique', 'all']:
-            raise ValueError('Argument "method" should be one of (exclude, choose, average, conf, unique, all)')
+        if mode not in self.REASSIGN_MODES:
+            msg = f'Argument "method" should be one of {self.REASSIGN_MODES}'
+            raise ValueError(msg)
 
-        _z = self.Q.norm(1) if initial else self.z
+        if mode == 'best_exclude':
+            ''' Identify best PP(s), then exclude rows with >1 best '''
+            isbest = self.z.binmax(1)
+            return isbest.multiply(isbest.sum(1) == 1)
+        elif mode == 'best_conf':
+            ''' Zero out all values less than threshold. Since each row must 
+                sum to 1, if threshold > 0.5 then each row will have at most 1
+                nonzero element.
+            '''
+            assert thresh > 0.5
+            v = csr_matrix(self.z > thresh, dtype=np.uint8)
+            # old way
+            v_old = self.z.apply_func(lambda x: x if x > thresh else 0)
+            v_old = v_old.ceil().astype(np.uint8)
+            assert v.check_equal(v_old)
+            assert np.all(v.sum(1) <= 1)
+            assert np.all(v_old.sum(1) <= 1)
+            return v
+        elif mode == 'best_random':
+            ''' Identify best PP(s), then randomly choose one per row '''
+            isbest = self.z.binmax(1)
+            return isbest.choose_random(1)
+        elif mode == 'best_average':
+            ''' Identify best PP(s), then divide by row sum '''
+            isbest = self.z.binmax(1)
+            return isbest.norm(1)
+        elif mode == 'initial_unique':
+            ''' Remove ambiguous rows and set nonzero values to 1 '''
+            assignments = csr_matrix(self.Q.multiply(1 - self.Y) > 0, dtype=np.uint8)
+            assignments_old = self.Q.norm(1).multiply(1 - self.Y).ceil().astype(np.uint8)
+            assert assignments.check_equal(assignments_old)
+            return assignments
+        elif mode == 'initial_random':
+            ''' Identify best scores in initial matrix then randomly choose one
+                per row
+            '''
+            isbest = self.raw_scores.binmax(1)
+            return isbest.choose_random(1)
+        elif mode == 'total_hits':
+            ''' Return all nonzero elements in initial matrix '''
+            return csr_matrix(self.raw_scores > 0, dtype=np.uint8)
 
-        if method == 'exclude':
-            # Identify best hit(s), then exclude rows with >1 best hits
-            v = _z.binmax(1)
-            assignments = v.multiply(v.sum(1) == 1)
-        elif method == 'choose':
-            # Identify best hit(s), then randomly choose reassignment
-            v = _z.binmax(1)
-            assignments = v.choose_random(1)
-        elif method == 'average':
-            # Identify best hit(s), then divide by row sum
-            v = _z.binmax(1)
-            assignments = v.norm(1)
-        elif method == 'conf':
-            # Zero out all values less than threshold
-            # If thresh > 0.5 then at most
-            v = _z.apply_func(lambda x: x if x >= thresh else 0)
-            # Average each row so each sums to 1.
-            assignments = v.norm(1)
-        elif method == 'unique':
-            # Zero all rows that are ambiguous
-            assignments = _z.multiply(1 - self.Y).ceil().astype(np.uint8)
-        elif method == 'all':
-            # Return all nonzero elements
-            assignments = _z.apply_func(lambda x: 1 if x > 0 else 0).astype(np.uint8)
-
-        assignments = csr_matrix(assignments)
-        return assignments
+        raise StellarscopeError('Reassignment method did not return')
+        return
 
 class Assigner:
     def __init__(self, annotation: annotation.BaseAnnotation, opts: OptionsBase) -> None:
@@ -1589,16 +1640,71 @@ class Stellarscope(Telescope):
     def output_report(self, tl: 'TelescopeLikelihood'):
         """
 
-        Args:
-            tl:
+        Parameters
+        ----------
+        tl
 
-        Returns:
+        Returns
+        -------
 
         """
-        _rmethod = self.opts.reassign_mode
-        _rprob = self.opts.conf_prob
-        _fnames = sorted(self.feat_index, key=self.feat_index.get)
-        _flens = self.feature_length
+        def reassign_using_mode(reassign_mode, output_mtx, conf_prob):
+            ''' Reassign reads '''
+            _assigned = tl.reassign(reassign_mode, conf_prob)
+
+            # Loading mtx in R does not support unsigned ints
+            # np.int16 (max=32767) is probably enough
+            # Using np.int32 (max=2147483647), switch to 16-bit if mem errors
+            mtx_dtype = np.float64 if reassign_mode == 'average' else np.int32
+
+            ''' Aggregate by barcode '''
+            _bc_counts = []
+            _empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
+            for _bc in _bc_list:
+                if _bc not in self.bcode_ridx_map:
+                    if self.whitelist:
+                        # If using whitelist, _bc_list may contain barcodes
+                        # that are not in self.bcode_ridx_map, since the latter
+                        # only contains barcodes for reads that align to the TE
+                        # annotation.
+                        _bc_counts.append(_empty_cell)
+                        continue
+                    else:
+                        msg = f'barcode "{_bc}" not in _bc_list, '
+                        msg += 'not using whitelist.'
+                        raise StellarscopeError(msg)
+
+                _rows = sorted(self.bcode_ridx_map[_bc])
+                _I = row_identity_matrix(_rows, _assigned.shape[0])
+                _assigned_cell = _assigned.multiply(_I)
+                _cell_colsums = _assigned_cell.colsums()
+                _bc_counts.append(_cell_colsums)
+
+            assert all(_.shape == (1, len(_ft_list)) for _ in _bc_counts)
+            assert len(_bc_counts) == len(_bc_list)
+
+            ''' Write counts to MTX '''
+            tstacked = scipy.sparse.vstack(_bc_counts,
+                                           dtype=mtx_dtype).transpose()
+
+            scipy.io.mmwrite(
+                output_mtx,
+                tstacked,
+                comment='\n'.join([
+                    ' PN:\tstellarscope',
+                    f' VN:\t{self.opts.version}',
+                    f' samfile:\t{self.opts.samfile}',
+                    f' gtffile:\t{self.opts.gtffile}',
+                    f' whitelist:\t{self.opts.whitelist}',
+                    f' pooling_mode:\t{self.opts.pooling_mode}',
+                    f' reassign_mode:\t{reassign_mode}',
+                    f' command:\t{" ".join(sys.argv)}',
+                ])
+            )
+
+            if self.opts.devmode:
+                fn = self.opts.outfile_path(f'03-{reassign_mode}.devmode_mat')
+                dump_data(fn, tstacked)
 
         ''' Write cell barcodes to tsv '''
         _bc_tsv = self.opts.outfile_path('barcodes.tsv')
@@ -1613,69 +1719,22 @@ class Stellarscope(Telescope):
         _ft_tsv = self.opts.outfile_path('features.tsv')
         _ft_list = sorted(self.feat_index, key=self.feat_index.get)
         with open(_ft_tsv, 'w') as outh:
-            print('\n'.join(_fnames), file=outh)
+            print('\n'.join(_ft_list), file=outh)
 
-        ''' Reassign reads '''
-        _assigned = tl.reassign(self.opts.reassign_mode, self.opts.conf_prob)
+        ''' Output count matrix '''
+        for i, _rmode in enumerate(self.opts.reassign_mode):
+            if i == 0:
+                _out_mtx = self.opts.outfile_path('TE_counts.mtx')
+            else:
+                _out_mtx = self.opts.outfile_path(f'TE_counts.{_rmode}.mtx')
 
-        if self.opts.reassign_mode == 'average':
-            mtx_dtype = np.float64
-        else:
-            mtx_dtype = np.int
-
-        ''' Aggregate by barcode '''
-        _bc_counts = []
-        _empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
-        for _bc in _bc_list:
-            if _bc not in self.bcode_ridx_map:
-                if self.whitelist:
-                    # If using whitelist, _bc_list may contain barcodes that
-                    # are not in self.bcode_ridx_map, since the latter only
-                    # contains barcodes for reads that align to the TE
-                    # annotation.
-                    _bc_counts.append(_empty_cell)
-                    continue
-                else:
-                    msg = f'barcode "{_bc}" not in _bc_list, '
-                    msg += 'not using whitelist.'
-                    raise StellarscopeError(msg)
-
-            _rows = sorted(self.bcode_ridx_map[_bc])
-            _I = row_identity_matrix(_rows, _assigned.shape[0])
-            _assigned_cell = _assigned.multiply(_I)
-            _cell_colsums = _assigned_cell.colsums()
-            _bc_counts.append(_cell_colsums)
-
-        assert all(_.shape == (1, len(_ft_list)) for _ in _bc_counts)
-        assert len(_bc_counts) == len(_bc_list)
-
-        ''' Write counts to MTX '''
-        tstacked = scipy.sparse.vstack(_bc_counts, dtype=mtx_dtype).transpose()
-
-        scipy.io.mmwrite(
-            self.opts.outfile_path('TE_counts.mtx'),
-            tstacked,
-            comment = '\n'.join([
-                ' PN:\tstellarscope',
-                f' VN:\t{self.opts.version}',
-                f' samfile:\t{self.opts.samfile}',
-                f' gtffile:\t{self.opts.gtffile}',
-                f' whitelist:\t{self.opts.whitelist}',
-                f' pooling_mode:\t{self.opts.pooling_mode}',
-                f' reassign_mode:\t{self.opts.reassign_mode}',
-                f' command:\t{" ".join(sys.argv)}',
-            ])
-        )
-
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('final_count_matrix'), tstacked)
-
+            reassign_using_mode(_rmode, _out_mtx, self.opts.conf_prob)
         return
 
     def output_report_old(self, tl, stats_filename, counts_filename,
                           barcodes_filename, features_filename):
 
-        _rmethod, _rprob = self.opts.reassign_mode, self.opts.conf_prob
+        _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
 
@@ -1716,7 +1775,7 @@ class Stellarscope(Telescope):
                 _stats_report.to_csv(outh, sep='\t', index=False)
 
         ''' Aggregate fragment assignments by cell using each of the 6 assignment methods'''
-        _methods = ['conf', 'all', 'unique', 'exclude', 'choose', 'average']
+        _methods = self.opts.reassign_mode # TelescopeLikelihood.REASSIGN_MODES
         _allbc = self.barcodes
         _bcidx = OrderedDict(
             {bcode: rows for bcode, rows in self.bcode_ridx_map.items() if
@@ -1735,8 +1794,8 @@ class Stellarscope(Telescope):
 
         for _method in _methods:
 
-            if _method != _rmethod and not self.opts.use_every_reassign_mode:
-                continue
+            #if _method != _rmethod and not self.opts.use_every_reassign_mode:
+            #    continue
 
             counts_outfile = f'{counts_filename[:counts_filename.rfind(".")]}_{_method}.mtx'
 
@@ -1766,8 +1825,8 @@ class Stellarscope(Telescope):
                 else:
                     _cell_count_matrix[i, :] = 0
 
-            if self.opts.use_every_reassign_mode:
-                scipy.io.mmwrite(counts_outfile, _cell_count_matrix)
+            # if self.opts.use_every_reassign_mode:
+            scipy.io.mmwrite(counts_outfile, _cell_count_matrix)
 
             if _method == _rmethod:
                 scipy.io.mmwrite(counts_filename, _cell_count_matrix)
