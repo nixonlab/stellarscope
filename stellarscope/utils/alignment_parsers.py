@@ -13,6 +13,7 @@ import pysam
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 
+raise ValueError("Marking dead code")
 
 def iterread(samfile):
     """ Iterate over samfile by query name (read ID)
@@ -150,6 +151,7 @@ class TelescopeRead(object):
     nofeature = '__nofeature__'
 
     def __init__(self, readname, segs):
+        raise ValueError("Marking dead code")
         self.readname       = readname
         self.is_paired      = None
         self.is_proper_pair = None
@@ -280,6 +282,7 @@ class TelescopeRead(object):
         """
         # One or more features has multiple alignments
         # Group alignments according to feature
+        raise ValueError("Marking dead code")
         tmp = defaultdict(list)
         for f,a in zip(self.features,self.alignments):
             if f is not None: # Alignments that did not get assigned to a feature will have None
