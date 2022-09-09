@@ -67,9 +67,8 @@
         action: store_true
         help: |
             Whether to output count matrices generated using every reassignment
-            mode. If specified, six output count matrices will be generated,
-            corresponding to the six possible reassignment methods (all, 
-            exclude, choose, average, conf, unique).
+            mode. If specified, an output file with the final count matrix will
+            be generated for each reassignment mode. See `--reassign_mode`.
     - logfile:
         type: argparse.FileType('r')
         help: Log output to this file.
@@ -116,38 +115,57 @@
                 pooled are provided by the user (see --celltype_tsv). EM is run
                 once for each cell type.
     - reassign_mode:
-        default: exclude
+        type: csv
+        default: best_exclude
         choices:
-            - all
-            - exclude
-            - choose
-            - average
-            - conf
-            - unique
+            - best_exclude
+            - best_conf
+            - best_random
+            - best_average
+            - initial_unique
+            - initial_random
+            - total_hits
         help: |
-            Reassignment mode. After EM is complete, each fragment is 
-            reassigned according to the expected value of its membership 
-            weights. The reassignment method is the method for resolving the 
-            "best" reassignment for fragments that have multiple possible 
-            reassignments.
+            Reassignment mode. This setting controls how ambiguously mapped 
+            reads are reassigned to calculate final read counts.
              
-            Available modes:
-              "exclude" - fragments with multiple best assignments are excluded
-                from the final counts
-              "choose" - the best assignment is randomly chosen from among the
-                set of best assignments
-              "average" - the fragment is divided evenly among the best 
-                assignments (fractional counts)
-              "conf" - only assignments that exceed a certain threshold 
-                  (--conf_prob) are accepted
-              "unique" - only uniquely aligned reads are included.
-              NOTE: Results using all assignment modes are included in the
-              statistics report by default. This argument determines what
-              mode will be used for the outputted counts file.
+            In the first four modes, the final alignment posterior 
+            probabilities (PP) estimated by EM are used to reassign reads. The
+            alignment with the highest PP is selected, with differing methods 
+            for resolving ties:
+              "best_exclude" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, the
+                read is excluded.
+              "best_conf" - alignment with the highest PP is selected *if* that 
+                value exceeds a user-defined threshold. If no alignments have 
+                a PP greater than this threshold, the read is excluded.
+                See `--conf_prob`.
+              "best_random" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, one of
+                the best alignments is randomly chosen.
+              "best_average" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, the
+                read count is divided evenly among the best alignments. Final
+                output is not integer.
+             
+            The final three modes do not perform reassignment or model fitting
+            but are included for comparison:
+              "initial_unique" - only reads that align uniquely to a single 
+                locus are included, multimappers are discarded. EM model
+                optimization is not considered, similar to the "unique counts"
+                approach.
+              "initial_random" - alignment is randomly chosen from among the
+                set of best scoring alignments. EM model optimization is not 
+                considered, similar to the "best counts" approach.
+              "total_hits" - every alignment has a weight of 1. Counts the 
+                number of initial alignments to each locus.
     - conf_prob:
         type: float
         default: 0.9
-        help: Minimum probability for high confidence assignment.
+        help: |
+            Minimum posterior probability threshold for "best_conf"
+            reassignment mode. Must be greater than 0.5 to ensure alignment is
+            unique; range: (0.5, 1.0].
     - overlap_mode:
         default: threshold
         choices:

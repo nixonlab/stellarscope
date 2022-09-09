@@ -19,6 +19,7 @@ import pkgutil
 
 import numpy as np
 from scipy.sparse import lil_matrix, eye, vstack, coo_matrix
+from numpy.random import default_rng
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
@@ -48,14 +49,28 @@ def permute_csr_rows(M, row_order):
     return new_M
 
 
-def fit_telescope_model(ts: Stellarscope, opts: 'StellarscopeAssignOptions') -> TelescopeLikelihood:
-    """
+def fit_telescope_model(
+        ts: Stellarscope,
+        opts: 'StellarscopeAssignOptions'
+) -> TelescopeLikelihood:
+    """ Fit model using different pooling modes
 
-    Args:
-        ts:
-        opts:
+    Parameters
+    ----------
+    ts : Stellarscope
+    opts : StellarscopeAssignOptions
 
-    Returns:
+    Returns
+    -------
+    TelescopeLikelihood
+        TelescopeLikelihood object containing the fitted posterior probability
+        matrix (`TelescopeLikelihood.z`).
+
+    .. deprecated:: be33986
+          `fit_telescope_model()` is replaced by `model.fit_pooling_model()`
+          which was partially implemented in be33986 and fully implemented in
+          1e66f35. This uses `Stellarscope.raw_scores` matrix and not the
+          UMI corrected `Stellarscope.corrected` matrix.
 
     """
     if opts.pooling_mode == 'individual':
@@ -145,13 +160,14 @@ class StellarscopeAssignOptions(utils.OptionsBase):
         args
         """
         def validate_csv(_optname, _val, _opt_d):
+            if 'choices' not in _opt_d:
+                return _val.split(',') # no "choices" for option
+
             _vallist = _val.split(',')
-            if 'choices' in _opt_d:
-                all_valid = all(v in _opt_d['choices'] for v in _vallist)
-                if not all_valid:
-                    msg = f'Invalid argument for `{_optname}`: {_val}. '
-                    msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
-                    raise StellarscopeError(msg)
+            if not all(v in _opt_d['choices'] for v in _vallist):
+                msg = f'Invalid argument for `{_optname}`: {_val}. '
+                msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+                raise StellarscopeError(msg)
             return _vallist
 
         super().__init__(args)
@@ -164,10 +180,44 @@ class StellarscopeAssignOptions(utils.OptionsBase):
                     vallist = validate_csv(optname, val, opt_d)
                     setattr(self, optname, vallist)
 
+        # Validate conf_prob
+        if not (0.5 < self.conf_prob <= 1.0):
+            msg = 'Confidence threshold "--conf_prob" must be in '
+            msg += 'range (0.5, 1.0].'
+            raise StellarscopeError(msg)
+
+        ''' Add all reassignment modes '''
+        if self.use_every_reassign_mode:
+            for m in TelescopeLikelihood.REASSIGN_MODES:
+                if m not in self.reassign_mode:
+                    self.reassign_mode.append(m)
+
+        ''' Calculate SHA1 checksums (up to 1 GB) '''
+        if hasattr(self, 'samfile') and self.samfile is not None:
+            self.samfile_sha1 = utils.sha1_head(self.samfile)
+
+        if hasattr(self, 'gtffile') and self.gtffile is not None:
+            self.gtffile_sha1 = utils.sha1_head(self.gtffile)
+
+        ''' Create seed
+            Multiply short (7 digit) digests of samfile and gtffile and
+            cast to a 32-bit unsigned integer.
+        '''
+        _sam_sha1_int = int(self.samfile_sha1[:7], 16)
+        _gtf_sha1_int = int(self.gtffile_sha1[:7], 16)
+        self.seed = np.uint32(_sam_sha1_int * _gtf_sha1_int)
+
+        ''' Create random number generator '''
+        self.rng = default_rng(self.seed)
+
+
+        ''' Set tempdir '''
         if hasattr(self, 'tempdir') and self.tempdir is None:
             if hasattr(self, 'ncpu') and self.ncpu > 1:
                 self.tempdir = tempfile.mkdtemp()
                 atexit.register(shutil.rmtree, self.tempdir)
+
+        return
 
     def outfile_path(self, suffix):
         basename = '%s-%s' % (self.exp_tag, suffix)
@@ -269,11 +319,6 @@ def run(args):
         lg.info("Skipping EM...")
         lg.info("stellarscope assign complete (%s)" % fmtmins(time()-total_time))
         return
-
-    ''' Seed RNG '''
-    seed = st_obj.get_random_seed()
-    lg.info("Random seed: {}".format(seed))
-    np.random.seed(seed)
 
     lg.info('Fitting model (fit_telescope_model)')
     stime = time()

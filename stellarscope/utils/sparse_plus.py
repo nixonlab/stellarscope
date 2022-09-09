@@ -4,12 +4,15 @@
 from __future__ import division
 from __future__ import annotations
 
+import numpy.random
 from future import standard_library
 standard_library.install_aliases()
 from builtins import range
+from typing import Optional
 
 import numpy as np
 import scipy.sparse
+from numpy.random import default_rng
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
@@ -142,7 +145,34 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             ret = self.indptr[1:] - self.indptr[:-1]
             return np.array(ret, ndmin=2).T
 
-    def choose_random(self, axis=None):
+    def choose_random(
+            self,
+            axis: Optional[int] = None,
+            rng: numpy.random.Generator = default_rng()
+    ) -> csr_matrix_plus:
+        """ Select random elements from matrix
+
+        Random elements are selected from the nonzero elements of the matrix.
+        All nonzero elements have a uniform chance of being selected using the
+        `numpy.random.Generator.choice()` function of `rng`. If generator must
+        have a set seed, the generator should be initialized outside and passed
+        to this function, otherwise a new generator will be created.
+
+        Parameters
+        ----------
+        axis : Optional[int], default=None
+            Axis along which random elements are chosen. `axis = 1` will choose
+            a one element randomly
+        rng : numpy.random.Generator, default=default_rng()
+            A random number generator. If not provided, creates a new random
+            generator using numpy.random.default_rng()
+
+        Returns
+        -------
+        csr_matrix_plus
+            Sparse CSR matrix with randomly selected values, unselected values
+            are set to 0.
+        """
         if axis is None:
             raise NotImplementedError
         elif axis == 0:
@@ -151,7 +181,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             ret = self.copy()
             for d_start, d_end in zip(ret.indptr[:-1], ret.indptr[1:]):
                 if d_end - d_start > 1:
-                    chosen = np.random.choice(range(d_start, d_end))
+                    chosen = rng.choice(range(d_start, d_end))
                     for j in range(d_start, d_end):
                         if j != chosen:
                             ret.data[j] = 0
@@ -229,12 +259,15 @@ def row_identity_matrix(selected, nrows):
 
         `coo_matrix((data, (i, j)), [shape=(M, N)])`
 
-    Args:
-        selected:
-        nrows:
+    Parameters
+    ----------
+    selected
+    nrows
 
-    Returns:
-        csr_matrix_plus: Sparse matrix with shape = (nrows, 1)
+    Returns
+    -------
+    csr_matrix_plus
+        Sparse matrix with shape = (nrows, 1)
 
     """
     _nnz = len(selected)

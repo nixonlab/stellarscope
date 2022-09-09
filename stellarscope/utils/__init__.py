@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-import yaml
-import os
-import logging
-from collections import OrderedDict
-# These are needed for eval statements:
 import sys
+import os
+import yaml
+import logging
+import hashlib, _hashlib
+from typing import Union, Optional
+from collections import OrderedDict
+
+# Does not appear to be used but needed for eval statements:
 import argparse
-import tempfile
-import atexit
-import shutil
 
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
 
 
 class OptionsBase(object):
@@ -24,8 +24,6 @@ class OptionsBase(object):
     Recommended usage is to subclass this for each subcommand by changing the
     OPTS class variable. OPTS is a YAML string that is parsed on initialization
     and contains data that can be passed to `ArgumentParser.add_argument()`.
-
-
     """
 
     OPTS = """
@@ -50,11 +48,6 @@ class OptionsBase(object):
         # default for logfile
         if hasattr(self, 'logfile') and self.logfile is None:
             self.logfile = sys.stderr
-        #
-        # # default for tempdir
-        # if hasattr(self, 'tempdir') and self.tempdir is None:
-        #     self.tempdir = tempfile.mkdtemp()
-        #     atexit.register(shutil.rmtree, self.tempdir)
 
     @classmethod
     def add_arguments(cls, parser):
@@ -69,7 +62,7 @@ class OptionsBase(object):
                 if 'type' in _d:
                     if _d['type'] == 'csv':
                         _d['type'] = 'str'
-                        _d.pop('default', None)
+                        #_d.pop('default', None)
                         _d.pop('choices', None)
                     _d['type'] = eval(_d['type'])
 
@@ -113,7 +106,10 @@ class OptionsBase(object):
             ret.append('{}'.format(group_name))
             for arg_name in args.keys():
                 v = getattr(self, arg_name, "Not set")
+                # formatting for files
                 v = getattr(v, 'name') if hasattr(v, 'name') else v
+                # formatting for list
+                # pass
                 ret.append('    {:30}{}'.format(arg_name + ':', v))
         return '\n'.join(ret)
 
@@ -148,17 +144,29 @@ def configure_logging(opts):
                         stream=opts.logfile)
     return
 
-import time
-def human_format(num):
-    """ Format number to human readable format.
 
-    From https://stackoverflow.com/questions/579310/formatting-long-numbers-as-strings-in-python
+def human_format(num: int) -> str:
+    """ Format integer to human readable format using SI suffixes.
 
-    Args:
-        num:
+    From `StackOverflow answer 579376`_
 
-    Returns:
+    Parameters
+    ----------
+    num : int
+        number to be reformatted
 
+    Returns
+    -------
+    str
+        reformatted number as string
+
+    Examples
+    --------
+    >>> human_format(2356743467)
+    '2.4G'
+
+    .. _StackOverflow answer 579376:
+        https://stackoverflow.com/a/579376
     """
     magnitude = 0
     while abs(num) >= 1000:
@@ -167,11 +175,125 @@ def human_format(num):
     # add more suffixes if you need them
     return '%.1f%s' % (num, ['', 'K', 'M', 'G', 'T', 'P'][magnitude])
 
-def log_progress(nfrags, overwrite=True):
+
+def log_progress(nfrags: int, overwrite: bool = True) -> None:
+    """
+
+    Parameters
+    ----------
+    nfrags : int
+        Number of fragments processed
+    overwrite : bool, default=True
+        Whether to overwrite progress message
+
+    Returns
+    -------
+    None
+    """
     prev = logging.StreamHandler.terminator
     if overwrite: logging.StreamHandler.terminator = '\r'
+
     logging.info(f'...processed {human_format(nfrags)} fragments')
-    logging.StreamHandler.terminator = prev
+
+    if overwrite: logging.StreamHandler.terminator = prev
+
+    return
 
 # A very large integer
 BIG_INT = 2**32 - 1
+
+
+def checksum_head(
+        filename: Union[str, bytes, os.PathLike],
+        algorithm: Optional[str] = None,
+        hash_obj: Optional[_hashlib.HASH] = None,
+        maxsize: Optional[float] = 1e9,
+) -> str:
+    """ Calculate checksum hash for file.
+
+    Calculates the checksum for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used. Supported algorithms are any
+    supported by the `hashlib`_ package.
+
+    .. _hashlib:
+        https://docs.python.org/3/library/hashlib.html
+
+    Parameters
+    ----------
+    filename : Union[str, bytes, os.PathLike]
+        Path to file
+    algorithm: Optional[str], default=None
+        Name of secure hash algorithm, i.e. sha1, sha256, md5, etc.
+    hash_obj: Optional[_hashlib.HASH], default=None
+        Hash object
+    maxsize : Optional[float], default=1e9
+        Maximum number of bytes to read. If None, read the whole file.
+
+    Returns
+    -------
+    str
+        Digest of data as string of hexadecimal digits
+
+    """
+    if hash_obj is None:
+        if algorithm not in hashlib.algorithms_available:
+            raise ValueError(f"{algorithm} is not available")
+        hash_obj = hashlib.new(algorithm)
+
+    if maxsize is None or os.path.getsize(filename) < maxsize:
+        with open(filename, 'rb') as fh:
+            hash_obj.update(fh.read())
+    else:
+        with open(filename, 'rb') as fh:
+            hash_obj.update(fh.read(int(maxsize)))
+
+    return hash_obj.hexdigest()
+
+
+def md5sum_head(
+        filename: Union[str, bytes, os.PathLike],
+        maxsize: Optional[float] = 1e9
+) -> str:
+    """ Calculate md5sum for file.
+
+    Calculates the md5sum for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used.
+
+    Parameters
+    ----------
+    filename : Union[str, bytes, os.PathLike]
+        Path to file
+    maxsize : Optional[float], default=1e9
+        Maximum number of bytes to read
+
+    Returns
+    -------
+    str
+        md5 digest as string of hexadecimal digits
+    """
+    return checksum_head(filename, hash_obj=hashlib.md5(), maxsize=maxsize)
+
+
+def sha1_head(
+        filename: Union[str, bytes, os.PathLike],
+        maxsize: Optional[float] = 1e9
+) -> str:
+    """ Calculate SHA1 hash for file.
+
+    Calculates the SHA1 hash for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used.
+
+    Parameters
+    ----------
+    filename : Union[str, bytes, os.PathLike]
+        Path to file
+    maxsize : Optional[float], default=1e9
+        Maximum number of bytes to read. If None, read the whole file.
+
+    Returns
+    -------
+    str
+        SHA1 digest as string of hexadecimal digits
+    """
+    return checksum_head(filename, hash_obj=hashlib.sha1(), maxsize=maxsize)
+
