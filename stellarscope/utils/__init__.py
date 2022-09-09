@@ -5,8 +5,8 @@ import sys
 import os
 import yaml
 import logging
-import hashlib
-import typing
+import hashlib, _hashlib
+from typing import Union, Optional
 from collections import OrderedDict
 
 # Does not appear to be used but needed for eval statements:
@@ -200,9 +200,56 @@ def log_progress(nfrags: int, overwrite: bool = True) -> None:
 BIG_INT = 2**32 - 1
 
 
+def checksum_head(
+        filename: Union[str, bytes, os.PathLike],
+        algorithm: Optional[str] = None,
+        hash_obj: Optional[_hashlib.HASH] = None,
+        maxsize: Optional[float] = 1e9,
+) -> str:
+    """ Calculate checksum hash for file.
+
+    Calculates the checksum for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used. Supported algorithms are any
+    supported by the `hashlib`_ package.
+
+    .. _hashlib:
+        https://docs.python.org/3/library/hashlib.html
+
+    Parameters
+    ----------
+    filename : Union[str, bytes, os.PathLike]
+        Path to file
+    algorithm: Optional[str], default=None
+        Name of secure hash algorithm, i.e. sha1, sha256, md5, etc.
+    hash_obj: Optional[_hashlib.HASH], default=None
+        Hash object
+    maxsize : Optional[float], default=1e9
+        Maximum number of bytes to read. If None, read the whole file.
+
+    Returns
+    -------
+    str
+        Digest of data as string of hexadecimal digits
+
+    """
+    if hash_obj is None:
+        if algorithm not in hashlib.algorithms_available:
+            raise ValueError(f"{algorithm} is not available")
+        hash_obj = hashlib.new(algorithm)
+
+    if maxsize is None or os.path.getsize(filename) < maxsize:
+        with open(filename, 'rb') as fh:
+            hash_obj.update(fh.read())
+    else:
+        with open(filename, 'rb') as fh:
+            hash_obj.update(fh.read(int(maxsize)))
+
+    return hash_obj.hexdigest()
+
+
 def md5sum_head(
-        filename: typing.Union[str, bytes, os.PathLike],
-        maxsize: float = 1e9
+        filename: Union[str, bytes, os.PathLike],
+        maxsize: Optional[float] = 1e9
 ) -> str:
     """ Calculate md5sum for file.
 
@@ -211,9 +258,9 @@ def md5sum_head(
 
     Parameters
     ----------
-    filename : typing.Union[str, bytes, os.PathLike]
+    filename : Union[str, bytes, os.PathLike]
         Path to file
-    maxsize : float, default=1e9
+    maxsize : Optional[float], default=1e9
         Maximum number of bytes to read
 
     Returns
@@ -221,11 +268,29 @@ def md5sum_head(
     str
         md5 digest as string of hexadecimal digits
     """
-    filesize = os.path.getsize(filename)
-    if filesize < maxsize:
-        with open(filename, 'rb') as fh:
-            ret = hashlib.md5(fh.read()).hexdigest()
-    else:
-        with open(filename, 'rb') as fh:
-            ret = hashlib.md5(fh.read(int(maxsize))).hexdigest()
-    return ret
+    return checksum_head(filename, hash_obj=hashlib.md5(), maxsize=maxsize)
+
+
+def sha1_head(
+        filename: Union[str, bytes, os.PathLike],
+        maxsize: Optional[float] = 1e9
+) -> str:
+    """ Calculate SHA1 hash for file.
+
+    Calculates the SHA1 hash for a file. If filesize is greater than `maxsize`,
+    only the first `maxsize` bytes are used.
+
+    Parameters
+    ----------
+    filename : Union[str, bytes, os.PathLike]
+        Path to file
+    maxsize : Optional[float], default=1e9
+        Maximum number of bytes to read. If None, read the whole file.
+
+    Returns
+    -------
+    str
+        SHA1 digest as string of hexadecimal digits
+    """
+    return checksum_head(filename, hash_obj=hashlib.sha1(), maxsize=maxsize)
+
