@@ -161,7 +161,7 @@ class Telescope(object):
     def get_random_seed(self):
         ret = self.run_info['total_fragments'] % self.shape[0] * self.shape[1]
         # 2**32 - 1 = 4294967295
-        return 12345 # ret % 4294967295
+        return ret % 4294967295
 
     def load_alignment(self, annotation):
         self.run_info['annotated_features'] = len(annotation.loci)
@@ -627,6 +627,9 @@ class TelescopeLikelihood(object):
     def __init__(self, score_matrix, opts):
         """
         """
+        # Store program options
+        self.opts = opts
+
         # Raw scores
         self.raw_scores = score_matrix
         self.max_score = self.raw_scores.max()
@@ -876,7 +879,7 @@ class TelescopeLikelihood(object):
         elif mode == 'best_random':
             ''' Identify best PP(s), then randomly choose one per row '''
             isbest = self.z.binmax(1)
-            return isbest.choose_random(1)
+            return isbest.choose_random(1, self.opts.rng)
         elif mode == 'best_average':
             ''' Identify best PP(s), then divide by row sum '''
             isbest = self.z.binmax(1)
@@ -892,7 +895,7 @@ class TelescopeLikelihood(object):
                 per row
             '''
             isbest = self.raw_scores.binmax(1)
-            return isbest.choose_random(1)
+            return isbest.choose_random(1, self.opts.rng)
         elif mode == 'total_hits':
             ''' Return all nonzero elements in initial matrix '''
             return csr_matrix(self.raw_scores > 0, dtype=np.uint8)
@@ -1020,20 +1023,25 @@ def select_umi_representatives(
 
     return comps.tolist(), is_excluded
 
+
 def fit_pooling_model(
         st: Stellarscope,
         opts: 'StellarscopeAssignOptions'
 ) -> TelescopeLikelihood:
-    """
+    """ Fit model using different pooling modes
 
     Parameters
     ----------
-    st
-    opts
+    st : Stellarscope
+        Stellarscope object
+    opts : StellarscopeAssignOptions
+        Stellarscope run options
 
     Returns
     -------
-
+    TelescopeLikelihood
+        TelescopeLikelihood object containing the fitted posterior probability
+        matrix (`TelescopeLikelihood.z`).
     """
     def fit_pseudobulk(scoremat):
         st_model = TelescopeLikelihood(scoremat, opts)
@@ -1284,6 +1292,17 @@ class Stellarscope(Telescope):
                 _ = _ret.setdefault(_bc, len(_ret))
         return _ret
 
+    # def get_random_seed(self):
+    #     """
+    #
+    #     Returns
+    #     -------
+    #
+    #     """
+    #     seed = int(self.sam_md5[:7], base=16) * int(self.gtf_md5[:7], base=16)
+    #     seed = np.uint32(seed)
+    #
+    #     return seed
 
 
     def load_alignment(self, annotation: annotation.BaseAnnotation):

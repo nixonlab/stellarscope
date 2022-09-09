@@ -106,7 +106,10 @@ class OptionsBase(object):
             ret.append('{}'.format(group_name))
             for arg_name in args.keys():
                 v = getattr(self, arg_name, "Not set")
+                # formatting for files
                 v = getattr(v, 'name') if hasattr(v, 'name') else v
+                # formatting for list
+                # pass
                 ret.append('    {:30}{}'.format(arg_name + ':', v))
         return '\n'.join(ret)
 
