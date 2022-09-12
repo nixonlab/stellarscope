@@ -320,12 +320,12 @@ def run(args):
         lg.info("stellarscope assign complete (%s)" % fmtmins(time()-total_time))
         return
 
-    lg.info('Fitting model (fit_telescope_model)')
-    stime = time()
-    st_obj.barcodes = st_obj.bcode_ridx_map.keys()
-    ts_model = fit_telescope_model(st_obj, opts)
-    lg.info("Fitting completed in %s" % fmtmins(time() - stime))
-
+    if opts.old_report:
+        lg.info('Fitting model (fit_telescope_model)')
+        stime = time()
+        st_obj.barcodes = st_obj.bcode_ridx_map.keys()
+        ts_model = fit_telescope_model(st_obj, opts)
+        lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     lg.info('Fitting model (fit_pooling_model)')
     stime = time()
@@ -343,25 +343,26 @@ def run(args):
         dump_data(opts.outfile_path('02-whitelist'), st_obj.whitelist)
 
     # Output final report
-    lg.info("Generating Old Report...")
-    stime = time()
-    st_obj.output_report_old(ts_model,
-                             opts.outfile_path('run_stats_old.tsv'),
-                             opts.outfile_path('TE_counts_old.mtx'),
-                             opts.outfile_path('barcodes_old.tsv'),
-                             opts.outfile_path('features_old.tsv')
-                             )
-    lg.info("Old report generated in %s" % fmtmins(time() - stime))
+    if opts.old_report:
+        lg.info("Generating Old Report...")
+        stime = time()
+        st_obj.output_report_old(ts_model,
+                                 opts.outfile_path('run_stats_old.tsv'),
+                                 opts.outfile_path('TE_counts_old.mtx'),
+                                 opts.outfile_path('barcodes_old.tsv'),
+                                 opts.outfile_path('features_old.tsv')
+                                 )
+        lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
     lg.info("Generating Report...")
     stime = time()
-    st_obj.output_report(ts_model)
+    st_obj.output_report(st_model)
     lg.info("Report generated in %s" % fmtmins(time() - stime))
 
     if opts.updated_sam:
         lg.info("Creating updated SAM file...")
         stime = time()
-        st_obj.update_sam(ts_model, opts.outfile_path('updated.bam'))
+        st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
         lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))

@@ -1752,7 +1752,23 @@ class Stellarscope(Telescope):
 
     def output_report_old(self, tl, stats_filename, counts_filename,
                           barcodes_filename, features_filename):
+        """
 
+        Parameters
+        ----------
+        tl
+        stats_filename
+        counts_filename
+        barcodes_filename
+        features_filename
+
+        Returns
+        -------
+
+        .. deprecated:: be33986
+            `model.output_report_old() is replaced by `model.output_report()`
+            which was implemented in be33986.
+        """
         _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
