@@ -45,9 +45,7 @@ class OptionsBase(object):
             else:
                 setattr(self, k, v)
 
-        # default for logfile
-        if hasattr(self, 'logfile') and self.logfile is None:
-            self.logfile = sys.stderr
+        # self.logfile (str) handled by configure_logging
 
     @classmethod
     def add_arguments(cls, parser):
@@ -138,10 +136,18 @@ def configure_logging(opts):
 
     logfmt = '%(asctime)s %(levelname)-8s %(message)-60s'
     logfmt += ' (from %(funcName)s in %(filename)s:%(lineno)d)'
-    logging.basicConfig(level=loglev,
-                        format=logfmt,
-                        datefmt='%Y-%m-%d %H:%M:%S',
-                        stream=opts.logfile)
+
+    if opts.logfile is None:
+        logging.basicConfig(level=loglev,
+                            format=logfmt,
+                            datefmt='%Y-%m-%d %H:%M:%S',
+                            stream=sys.stderr)
+    else:
+        logging.basicConfig(level=loglev,
+                            format=logfmt,
+                            datefmt='%Y-%m-%d %H:%M:%S',
+                            filename=opts.logfile)
+
     return
 
 

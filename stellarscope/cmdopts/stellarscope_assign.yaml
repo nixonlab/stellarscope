@@ -70,8 +70,10 @@
             mode. If specified, an output file with the final count matrix will
             be generated for each reassignment mode. See `--reassign_mode`.
     - logfile:
-        type: argparse.FileType('r')
-        help: Log output to this file.
+        type: str # argparse.FileType('w')
+        help: |
+          Log messages to this file. If not provided, output messages will be
+          written to <stderr>.
     - quiet:
         action: store_true
         help: Silence (most) output.
