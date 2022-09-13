@@ -1926,7 +1926,7 @@ class Stellarscope(Telescope):
         return
 
     def check_equal(self, other: Stellarscope, explain: bool=False):
-        """
+        """ Check whether two Stellarscope objects are equal
 
         Parameters
         ----------
@@ -1938,12 +1938,25 @@ class Stellarscope(Telescope):
         Returns
         -------
         bool
-            True if attribute values of `Stellarscope` objects are the equal,
-            False otherwise.
+            True if `Stellarscope` objects are equivalent, False otherwise.
 
         """
 
-        def check_attr_equal(v1, v2):
+        def check_attr_equal(v1: Any, v2: Any):
+            """ Check whether two attributes are equal
+
+            Parameters
+            ----------
+            v1: Any
+                First value to compare
+            v2: Any
+                Second value to compare
+            Returns
+            -------
+            bool
+                True if values are equal, False otherwise
+
+            """
             if v1 is None or v2 is None:
                 if v1 is None and v2 is None:
                     return True, f'both are None'
