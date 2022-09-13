@@ -16,6 +16,8 @@ from multiprocessing import Pool
 import functools
 import itertools
 import warnings
+from typing import Union
+import pickle
 
 import numpy as np
 import scipy
@@ -1637,24 +1639,56 @@ class Stellarscope(Telescope):
 
         return
 
-    def save(self, filename):
-        """ Save Stellarscope object to file
+    def save(self, filename: Union[str, bytes, os.PathLike]):
+        """ Save current state of Stellarscope object
 
-        Args:
-            filename:
+        Parameters
+        ----------
+        filename
 
-        Returns:
+        Returns
+        -------
+        bool
             True is save is successful, False otherwise
-
         """
+        with open(filename, 'wb') as fh:
+            pickle.dump(self, fh)
+            #
+            #
+            # _feat_list = sorted(self.feat_index, key=self.feat_index.get)
+            # _flen_list = [self.feature_length[f] for f in _feat_list]
+            # np.savez(filename,
+            #          _run_info=list(self.run_info.items()),
+            #          _flen_list=_flen_list,
+            #          _feat_list=_feat_list,
+            #          _read_list=sorted(self.read_index,
+            #                            key=self.read_index.get),
+            #          _shape=self.shape,
+            #          _raw_scores_data=self.raw_scores.data,
+            #          _raw_scores_indices=self.raw_scores.indices,
+            #          _raw_scores_indptr=self.raw_scores.indptr,
+            #          _raw_scores_shape=self.raw_scores.shape,
+            #          )
         return True
 
     @classmethod
-    def load(cls, filename):
-        loader = np.load(filename)
-        obj = cls.__new__(cls)
-        ''' TODO: Copy data from loader into obj'''
-        return obj
+    def load(cls, filename: Union[str, bytes, os.PathLike]):
+        """ Load Stellarscope object from file
+
+        Parameters
+        ----------
+        filename
+
+        Returns
+        -------
+
+        """
+        with open(filename, 'rb') as fh:
+            return pickle.load(fh)
+        # loader = np.load(filename)
+        # obj = cls.__new__(cls)
+        # ''' TODO: Copy data from loader into obj'''
+        # return obj
 
     def output_report(self, tl: 'TelescopeLikelihood'):
         """
@@ -1890,6 +1924,98 @@ class Stellarscope(Telescope):
         lg.log(loglev, f'        {_info["feat_A"]} map to multiple loci.')
         lg.log(loglev, '')
         return
+
+    def check_equal(self, other: Stellarscope, explain: bool=False):
+        """
+
+        Parameters
+        ----------
+        other: Stellarscope
+            Stellarscope object to compare with
+        explain: bool, default=False
+            Whether to return an explanation of which attributes are not equal.
+
+        Returns
+        -------
+        bool
+            True if attribute values of `Stellarscope` objects are the equal,
+            False otherwise.
+
+        """
+
+        def check_attr_equal(v1, v2):
+            if v1 is None or v2 is None:
+                if v1 is None and v2 is None:
+                    return True, f'both are None'
+                elif v2 is not None:
+                    return False, f'v1 is None but v2 is {type(v2)})'
+                elif v1 is not None:
+                    return False, f'v2 is None but v1 is {type(v1)}'
+                raise StellarscopeError('unreachable')
+
+            if type(v1) != type(v2):
+                return False, f'v1 is {type(v1)}but v2 is {type(v2)}'
+            if isinstance(v1, (bool, str, int, tuple)):
+                if v1 == v2:
+                    return True, f'{v1} == {v2}'
+                else:
+                    return False, f'{v1} != {v2}'
+            if isinstance(v1, list):
+                if v1 == v2:
+                    return True, f'lists are equal'
+                else:
+                    return False, f'lists are not equal'
+            if isinstance(v1, dict):
+                if v1 == v2:
+                    return True, f'dicts are equal'
+                else:
+                    return False, f'dicts are not equal'
+            if isinstance(v1, csr_matrix):
+                if v1.check_equal(v2):
+                    return True, f'sparse matrixes are equal'
+                else:
+                    return False, f'sparse matrixes are not equal'
+            if isinstance(v1, OptionsBase):
+                return True, 'no checking for options yet'
+            raise StellarscopeError(f'unknown type {type(v1)}')
+
+        ''' Check both are Stellarscope objects '''
+        if not isinstance(other, self.__class__):
+            if not explain:
+                return False
+            else:
+                return False, f'other is type {type(other)}'
+
+        ''' Check both object have the same attributes '''
+        same_attrs = self.__dict__.keys() == other.__dict__.keys()
+        if not same_attrs:
+            if not explain:
+                return False
+            reason = ''
+            d1 = self.__dict__.keys() - other.__dict__.keys()
+            if d1:
+                reason += f'self has attrs "{",".join(d1)}" not in other\n'
+            d2 = other.__dict__.keys() - self.__dict__.keys()
+            if d2:
+                reason += f'other has attrs "{",".join(d2)}" not in self\n'
+            return False, reason
+
+        ''' Check that attributes are equal '''
+        is_equal = True
+        reason = ''
+        for a in self.__dict__.keys():
+            v1 = getattr(self, a)
+            v2 = getattr(other, a)
+            attr_equal, msg = check_attr_equal(v1, v2)
+            is_equal &= attr_equal
+            if not attr_equal:
+                if not explain:
+                    return is_equal
+                reason += f'Difference found in "Stellarscope.{a}": {msg}\n'
+
+        if not explain:
+            return is_equal
+        return is_equal, reason
 
     def __str__(self):
         if hasattr(self.opts, 'samfile'):

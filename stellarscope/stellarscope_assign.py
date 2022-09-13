@@ -280,6 +280,9 @@ def run(args):
     st_obj.load_alignment(annot)
     lg.info("Loaded alignment in {}".format(fmtmins(time() - stime)))
 
+    ''' Save object checkpoint '''
+    st_obj.save(opts.outfile_path('checkpoint.00.pickle'))
+
     ''' Print alignment summary '''
     st_obj.print_summary(lg.INFO)
 
@@ -302,6 +305,7 @@ def run(args):
         stime = time()
         st_obj.dedup_umi()
         lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
+        st_obj.save(opts.outfile_path('checkpoint.01.pickle'))
 
     if opts.devmode:
         dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
@@ -313,8 +317,6 @@ def run(args):
         dump_data(opts.outfile_path('01-bcode_ridx_map'), st_obj.bcode_ridx_map)
         dump_data(opts.outfile_path('01-whitelist'), st_obj.whitelist)
 
-    ''' Save object checkpoint '''
-    st_obj.save(opts.outfile_path('checkpoint'))
     if opts.skip_em:
         lg.info("Skipping EM...")
         lg.info("stellarscope assign complete (%s)" % fmtmins(time()-total_time))
@@ -365,5 +367,6 @@ def run(args):
         st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
         lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
+    st_obj.save(opts.outfile_path('checkpoint.02.pickle'))
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))
     return
