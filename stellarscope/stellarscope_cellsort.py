@@ -25,7 +25,7 @@ class StellarscopeCellSortOptions(utils.OptionsBase):
     """
 
     """
-    OPTS = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_cellsort.yaml')
+    OPTS_YML = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_cellsort.yaml')
 
     def __init__(self, args):
         super().__init__(args)

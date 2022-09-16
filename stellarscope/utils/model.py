@@ -1739,21 +1739,25 @@ class Stellarscope(Telescope):
             ''' Write counts to MTX '''
             tstacked = scipy.sparse.vstack(_bc_counts,
                                            dtype=mtx_dtype).transpose()
+            _meta = OrderedDict({
+                'PN': 'stellarscope',
+                'VN': self.opts.version,
+            })
+            if hasattr(self.opts, 'samfile'):
+                _meta['samfile'] = self.opts.samfile
+            if hasattr(self.opts, 'checkpoint'):
+                _meta['checkpoint'] = self.opts.checkpoint
+            if hasattr(self.opts, 'gtffile'):
+                _meta['gtffile'] = self.opts.gtffile
+            if hasattr(self.opts, 'whitelist'):
+                _meta['whitelist'] = self.opts.whitelist
+            _meta['pooling_mode'] = self.opts.pooling_mode
+            _meta['reassign_mode'] = reassign_mode
+            _meta['command'] = ' '.join(sys.argv)
 
-            scipy.io.mmwrite(
-                output_mtx,
-                tstacked,
-                comment='\n'.join([
-                    ' PN:\tstellarscope',
-                    f' VN:\t{self.opts.version}',
-                    f' samfile:\t{self.opts.samfile}',
-                    f' gtffile:\t{self.opts.gtffile}',
-                    f' whitelist:\t{self.opts.whitelist}',
-                    f' pooling_mode:\t{self.opts.pooling_mode}',
-                    f' reassign_mode:\t{reassign_mode}',
-                    f' command:\t{" ".join(sys.argv)}',
-                ])
-            )
+            _comment_str = '\n '.join(f'{k}: {v}' for k,v in _meta.items())
+
+            scipy.io.mmwrite(output_mtx, tstacked, comment=_comment_str)
 
             if self.opts.devmode:
                 fn = self.opts.outfile_path(f'03-{reassign_mode}.devmode_mat')

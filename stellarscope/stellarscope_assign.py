@@ -150,7 +150,7 @@ class StellarscopeAssignOptions(utils.OptionsBase):
     """
     import command options
     """
-    OPTS = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_assign.yaml')
+    OPTS_YML = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_assign.yaml')
 
     def __init__(self, args):
         """
@@ -159,27 +159,20 @@ class StellarscopeAssignOptions(utils.OptionsBase):
         ----------
         args
         """
-        def validate_csv(_optname, _val, _opt_d):
-            if 'choices' not in _opt_d:
-                return _val.split(',') # no "choices" for option
-
-            _vallist = _val.split(',')
-            if not all(v in _opt_d['choices'] for v in _vallist):
-                msg = f'Invalid argument for `{_optname}`: {_val}. '
-                msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
-                raise StellarscopeError(msg)
-            return _vallist
+        # def validate_csv(_optname, _val, _opt_d):
+        #     if 'choices' not in _opt_d:
+        #         return _val.split(',') # no "choices" for option
+        #
+        #     _vallist = _val.split(',')
+        #     if not all(v in _opt_d['choices'] for v in _vallist):
+        #         msg = f'Invalid argument for `{_optname}`: {_val}. '
+        #         msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+        #         raise StellarscopeError(msg)
+        #     return _vallist
 
         super().__init__(args)
 
         ''' Validate command-line args '''
-        for optgroup in self.opt_groups:
-            for optname, opt_d in self.opt_groups[optgroup].items():
-                if 'type' in opt_d and opt_d['type'] == 'csv':
-                    val = getattr(self, optname)
-                    vallist = validate_csv(optname, val, opt_d)
-                    setattr(self, optname, vallist)
-
         # Validate conf_prob
         if not (0.5 < self.conf_prob <= 1.0):
             msg = 'Confidence threshold "--conf_prob" must be in '
@@ -193,19 +186,20 @@ class StellarscopeAssignOptions(utils.OptionsBase):
                     self.reassign_mode.append(m)
 
         ''' Calculate SHA1 checksums (up to 1 GB) '''
-        if hasattr(self, 'samfile') and self.samfile is not None:
-            self.samfile_sha1 = utils.sha1_head(self.samfile)
-
-        if hasattr(self, 'gtffile') and self.gtffile is not None:
-            self.gtffile_sha1 = utils.sha1_head(self.gtffile)
-
         ''' Create seed
             Multiply short (7 digit) digests of samfile and gtffile and
             cast to a 32-bit unsigned integer.
         '''
-        _sam_sha1_int = int(self.samfile_sha1[:7], 16)
-        _gtf_sha1_int = int(self.gtffile_sha1[:7], 16)
-        self.seed = np.uint32(_sam_sha1_int * _gtf_sha1_int)
+        self.seed = 12345
+        if hasattr(self, 'samfile') and self.samfile is not None:
+            self.samfile_sha1 = utils.sha1_head(self.samfile)
+            self.seed = int(self.samfile_sha1[:7], 16)
+
+        if hasattr(self, 'gtffile') and self.gtffile is not None:
+            self.gtffile_sha1 = utils.sha1_head(self.gtffile)
+            self.seed = self.seed * int(self.gtffile_sha1[:7], 16)
+
+        self.seed = np.uint32(self.seed)
 
         ''' Create random number generator '''
         self.rng = default_rng(self.seed)
@@ -281,7 +275,7 @@ def run(args):
     lg.info("Loaded alignment in {}".format(fmtmins(time() - stime)))
 
     ''' Save object checkpoint '''
-    st_obj.save(opts.outfile_path('checkpoint.00.pickle'))
+    st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
 
     ''' Print alignment summary '''
     st_obj.print_summary(lg.INFO)
@@ -305,7 +299,7 @@ def run(args):
         stime = time()
         st_obj.dedup_umi()
         lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
-        st_obj.save(opts.outfile_path('checkpoint.01.pickle'))
+        st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
 
     if opts.devmode:
         dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
@@ -367,6 +361,6 @@ def run(args):
         st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
         lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
-    st_obj.save(opts.outfile_path('checkpoint.02.pickle'))
+    st_obj.save(opts.outfile_path('checkpoint.final.pickle'))
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))
     return

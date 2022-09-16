@@ -1,0 +1,159 @@
+- Input Options:
+    - checkpoint:
+        positional: True
+        help: |
+            Path to alignment file. Alignment file can be in SAM or BAM format.
+            Alignments must be ordered so that all alignments for a read or
+            read pair appear sequentially in the file i.e. sorted by query name
+            or collated.
+    - celltype_tsv:
+        type: str
+        help: |
+            Path to tab-delimited text file with celltype assignments, with
+            cell barcodes in first column and celltype string in the second.
+            Required if pooling_mode is 'celltype', ignored otherwise.
+
+- Reporting Options:
+    - outdir:
+        default: .
+        help: Output directory.
+    - exp_tag:
+        default: stResume
+        help: Experiment tag. Prefix for all output files.
+    - updated_sam:
+        action: store_true
+        help: Generate an updated alignment file.
+    - use_every_reassign_mode:
+        action: store_true
+        help: |
+            Whether to output count matrices generated using every reassignment
+            mode. If specified, an output file with the final count matrix will
+            be generated for each reassignment mode. See `--reassign_mode`.
+    - logfile:
+        type: str
+        help: |
+          Log messages to this file. If not provided, output messages will be
+          written to <stderr>.
+    - quiet:
+        action: store_true
+        help: Silence (most) output.
+    - debug:
+        action: store_true
+        help: Print verbose debug messages.
+    - devmode:
+        action: store_true
+        help: |
+            Run in development mode. Outputs noisy debugging messages and 
+            writes intermediate data structures to file.
+    - old_report:
+        action: store_true
+        help: |
+            Generate old reports in addition to new report. The old report
+            uses UMI deduplication during counting instead of before EM and
+            may not include all whitelist cell barcodes in output.
+- Run Modes:
+    - pooling_mode:
+        type: str
+        default: pseudobulk
+        choices:
+          - pseudobulk
+          - individual
+          - celltype
+        help: |
+            The population of cells to use for estimating locus expression 
+            levels in the EM algorithm. Locus expression is estimated as a 
+            weighted sum of the alignments to each locus and is used to update 
+            the posterior probability of each alignment. This parameter 
+            determines which cell or cells form the basis for this estimation.
+             
+            Available modes:
+              "pseudobulk" - pools all reads from all cells. Similar to 
+                treating as a bulk sample. EM is run once. 
+              "individual" - pools reads from each cell separately, treating 
+                each cell independently. EM is run once for each cell.
+              "celltype" -  pools together reads from multiple cells sharing 
+                the same cell type. Groups of cell barcodes that should be 
+                pooled are provided by the user (see --celltype_tsv). EM is run
+                once for each cell type.
+    - reassign_mode:
+        type: csv
+        default: best_exclude
+        choices:
+            - best_exclude
+            - best_conf
+            - best_random
+            - best_average
+            - initial_unique
+            - initial_random
+            - total_hits
+        help: |
+            Reassignment mode. This setting controls how ambiguously mapped 
+            reads are reassigned to calculate final read counts.
+             
+            In the first four modes, the final alignment posterior 
+            probabilities (PP) estimated by EM are used to reassign reads. The
+            alignment with the highest PP is selected, with differing methods 
+            for resolving ties:
+              "best_exclude" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, the
+                read is excluded.
+              "best_conf" - alignment with the highest PP is selected *if* that 
+                value exceeds a user-defined threshold. If no alignments have 
+                a PP greater than this threshold, the read is excluded.
+                See `--conf_prob`.
+              "best_random" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, one of
+                the best alignments is randomly chosen.
+              "best_average" - alignment with the highest PP is selected. If 
+                multiple alignments have equal best PPs after fitting, the
+                read count is divided evenly among the best alignments. Final
+                output is not integer.
+             
+            The final three modes do not perform reassignment or model fitting
+            but are included for comparison:
+              "initial_unique" - only reads that align uniquely to a single 
+                locus are included, multimappers are discarded. EM model
+                optimization is not considered, similar to the "unique counts"
+                approach.
+              "initial_random" - alignment is randomly chosen from among the
+                set of best scoring alignments. EM model optimization is not 
+                considered, similar to the "best counts" approach.
+              "total_hits" - every alignment has a weight of 1. Counts the 
+                number of initial alignments to each locus.
+    - conf_prob:
+        type: float
+        default: 0.9
+        help: |
+            Minimum posterior probability threshold for "best_conf"
+            reassignment mode. Must be greater than 0.5 to ensure alignment is
+            unique; range: (0.5, 1.0].
+    - ignore_umi:
+        action: store_true
+        help: Do not perform UMI deduplication. Not recommended.
+- Model Parameters:
+    - pi_prior:
+        type: int
+        default: 0
+        help: Prior on π. Equivalent to adding n unique reads.
+    - theta_prior:
+        type: int
+        default: 200000
+        help: >
+              Prior on θ. Equivalent to adding n non-unique reads. NOTE: It
+              is recommended to set this prior to a large value. This
+              increases the penalty for non-unique reads and improves
+              accuracy.
+    - em_epsilon:
+        type: float
+        default: 1e-7
+        help: EM Algorithm Epsilon cutoff
+    - max_iter:
+        type: int
+        default: 100
+        help: EM Algorithm maximum iterations
+    - use_likelihood:
+        action: store_true
+        help: Use difference in log-likelihood as convergence criteria.
+    - skip_em:
+        action: store_true
+        help: Exits after loading alignment and saving checkpoint file.

@@ -10,13 +10,14 @@ from time import time
 import logging as lg
 import gc
 
+import pkgutil
+
 import numpy as np
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
 
-from .utils.model import TelescopeLikelihood
-from .utils.model import Stellarscope
+from .utils.model import Stellarscope, TelescopeLikelihood, fit_pooling_model
 from .stellarscope_assign import StellarscopeAssignOptions
 
 __author__ = 'Matthew L. Bendall'
@@ -24,81 +25,7 @@ __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 
 class StellarscopeResumeOptions(StellarscopeAssignOptions):
 
-    OPTS = """
-    - Input Options:
-        - checkpoint:
-            positional: True
-            help: Path to checkpoint file.
-    - Reporting Options:
-        - quiet:
-            action: store_true
-            help: Silence (most) output.
-        - debug:
-            action: store_true
-            help: Print debug messages.
-        - logfile:
-            type: argparse.FileType('r')
-            help: Log output to this file.
-        - outdir:
-            default: .
-            help: Output directory.
-        - exp_tag:
-            default: telescope
-            help: Experiment tag
-    - Run Modes:
-        - reassign_mode:
-            default: exclude
-            choices:
-                - exclude
-                - choose
-                - average
-                - conf
-                - unique
-            help: >
-                  Reassignment mode. After EM is complete, each fragment is
-                  reassigned according to the expected value of its membership
-                  weights. The reassignment method is the method for resolving
-                  the "best" reassignment for fragments that have multiple
-                  possible reassignments.
-                  Available modes are: "exclude" - fragments with multiple best
-                  assignments are excluded from the final counts; "choose" -
-                  the best assignment is randomly chosen from among the set of
-                  best assignments; "average" - the fragment is divided evenly
-                  among the best assignments; "conf" - only assignments that
-                  exceed a certain threshold (see --conf_prob) are accepted;
-                  "unique" - only uniquely aligned reads are included.
-                  NOTE: Results using all assignment modes are included in the
-                  Telescope report by default. This argument determines what
-                  mode will be used for the "final counts" column.
-        - conf_prob:
-            type: float
-            default: 0.9
-            help: Minimum probability for high confidence assignment.
-    - Model Parameters:
-        - pi_prior:
-            type: int
-            default: 0
-            help: Prior on π. Equivalent to adding n unique reads.
-        - theta_prior:
-            type: int
-            default: 200000
-            help: >
-                  Prior on θ. Equivalent to adding n non-unique reads. NOTE: It
-                  is recommended to set this prior to a large value. This
-                  increases the penalty for non-unique reads and improves
-                  accuracy.
-        - em_epsilon:
-            type: float
-            default: 1e-7
-            help: EM Algorithm Epsilon cutoff
-        - max_iter:
-            type: int
-            default: 100
-            help: EM Algorithm maximum iterations
-        - use_likelihood:
-            action: store_true
-            help: Use difference in log-likelihood as convergence criteria.
-    """
+    OPTS_YML = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_resume.yaml')
 
 def run(args):
     """
@@ -109,48 +36,57 @@ def run(args):
     Returns:
 
     """
-    option_class = StellarscopeResumeOptions
-    opts = option_class(args)
+    opts = StellarscopeResumeOptions(args)
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
     total_time = time()
 
-    ''' Create Telescope object '''
-    lg.info('Loading Telescope object from file...')
-    Telescope_class = Stellarscope
-    ts = Telescope_class.load(opts.checkpoint)
-    ts.opts = opts
-
-    ''' Print alignment summary '''
-    ts.print_summary(lg.INFO)
-
-    ''' Seed RNG '''
-    seed = ts.get_random_seed()
-    lg.debug("Random seed: {}".format(seed))
-    np.random.seed(seed)
-
-
-    ''' Create likelihood '''
-    ts_model = TelescopeLikelihood(ts.raw_scores, opts)
-
-    ''' Run Expectation-Maximization '''
-    lg.info('Running Expectation-Maximization...')
+    ''' Load Stellarscope object '''
+    lg.info('Loading Stellarscope object from checkpoint...')
     stime = time()
-    ts_model.em(use_likelihood=opts.use_likelihood, loglev=lg.INFO)
-    lg.info("EM completed in %s" % fmtmins(time() - stime))
+    st_obj = Stellarscope.load(opts.checkpoint)
 
-    ''' Output final report '''
+    # Resolve options
+    prevopts = st_obj.opts
+    st_obj.opts = opts
+    st_obj.opts.no_feature_key = prevopts.no_feature_key
+    # opts.ignore_umi == prevopts.ignore_umi
+    # opts.reassign_mode == prevopts.reassign_mode
+
+    lg.info(f"Loaded object in {fmtmins(time() - stime)}")
+
+
+    ''' UMI correction '''
+    if st_obj.corrected is None:
+        lg.info('Checkpoint does not contain UMI corrected scores.')
+        if opts.ignore_umi:
+            lg.info('Skipping UMI deduplication (option --ignore_umi)')
+        else:
+            lg.info('Removing UMI duplicates...')
+            stime = time()
+            st_obj.dedup_umi()
+            lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
+            st_obj.save(opts.outfile_path('checkpoint.corrected.pickle'))
+    else:
+        lg.info('Checkpoint contains UMI corrected scores.')
+        if opts.ignore_umi:
+            lg.info('Ignoring UMI corrected scores (option --ignore_umi)')
+            st_obj.corrected = None
+        else:
+            lg.info('Using UMI corrected scores from checkpoint')
+
+    ''' Fit pooling model '''
+    lg.info('Fitting model...')
+    stime = time()
+    st_model = fit_pooling_model(st_obj, opts)
+    lg.info(f"Fitting completed in {fmtmins(time() - stime)}")
+
+    ''' Generate report '''
     lg.info("Generating Report...")
-    ts.output_report(ts_model,
-                     opts.outfile_path('run_stats.tsv'),
-                     opts.outfile_path('TE_counts.mtx'),
-                     opts.outfile_path('barcodes.tsv'),
-                     opts.outfile_path('features.tsv'))
+    stime = time()
+    st_obj.output_report(st_model)
+    lg.info("Report generated in %s" % fmtmins(time() - stime))
 
-    # if opts.updated_sam:
-    #     lg.info("Creating updated SAM file...")
-    #     ts.update_sam(ts_model, opts.outfile_path('updated.bam'))
-
-    lg.info("stellarscope resume complete (%s)" % fmtmins(time() - total_time))
-
+    lg.info(f"stellarscope resume complete in {fmtmins(time() - total_time)}")
     return
+

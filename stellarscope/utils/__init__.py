@@ -22,11 +22,12 @@ class OptionsBase(object):
 
     Each class instance has attributes that correspond to command line options.
     Recommended usage is to subclass this for each subcommand by changing the
-    OPTS class variable. OPTS is a YAML string that is parsed on initialization
-    and contains data that can be passed to `ArgumentParser.add_argument()`.
+    OPTS_YML class variable. OPTS_YML is a YAML string that is parsed on
+    initialization and contains data that can be passed to
+    `ArgumentParser.add_argument()`.
     """
 
-    OPTS = """
+    OPTS_YML = """
     - Input Options:
         - infile:
             positional: True
@@ -37,34 +38,69 @@ class OptionsBase(object):
             help: Output file.
     """
 
-    def __init__(self, args):
-        self.opt_names, self.opt_groups = self._parse_yaml_opts(self.OPTS)
-        for k, v in vars(args).items():
-            if k in self.opt_names:
-                setattr(self, k, v)
-            else:
-                setattr(self, k, v)
+    def __init__(self, args: argparse.Namespace):
+        """
 
-        # self.logfile (str) handled by configure_logging
+        Parameters
+        ----------
+        args
+        """
+        def validate_csv(_optname, _val, _opt_d):
+            _vallist = _val.split(',')
+            if 'choices' in _opt_d:
+                if not all(v in _opt_d['choices'] for v in _vallist):
+                    msg = f'Invalid argument for "{_optname}": "{_val}". '
+                    msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+                    raise ValueError(msg)
+            return _vallist
+
+        self.opt_dicts, self.opt_groups = self._parse_yaml_opts(self.OPTS_YML)
+
+        for optname, optval in vars(args).items():
+            if optname in self.opt_dicts:
+                _d = self.opt_dicts[optname]
+                if _d.get('type') == 'csv':
+                    vallist = validate_csv(optname, optval, _d)
+                    setattr(self, optname, vallist)
+                else:
+                    setattr(self, optname, optval)
+            else:
+                setattr(self, optname, optval)
+
+        return
 
     @classmethod
-    def add_arguments(cls, parser):
-        opt_names, opt_groups = cls._parse_yaml_opts(cls.OPTS)
+    def add_arguments(cls, parser: argparse.ArgumentParser):
+        """
+
+        Parameters
+        ----------
+        parser
+
+        Returns
+        -------
+
+        """
+        _, opt_groups = cls._parse_yaml_opts(cls.OPTS_YML)
         for group_name, args in opt_groups.items():
             argparse_grp = parser.add_argument_group(group_name, '')
             for arg_name, arg_d in args.items():
                 _d = dict(arg_d)
-                if _d.pop('hide', False):
+
+                ''' Special cases '''
+                if _d.pop('hide', False):   # do not add options with "hide"
                     continue
 
+                if _d.get('type') == 'csv': # set for type "csv"
+                    _d.pop('choices', None)
+                    # _d.pop('default', None)
+                    _d['type'] = 'str'
+
+                ''' Evaluate type (all opts) '''
                 if 'type' in _d:
-                    if _d['type'] == 'csv':
-                        _d['type'] = 'str'
-                        #_d.pop('default', None)
-                        _d.pop('choices', None)
                     _d['type'] = eval(_d['type'])
 
-
+                ''' Format argument name '''
                 if _d.pop('positional', False):
                     _arg_name = arg_name
                 else:
@@ -80,17 +116,28 @@ class OptionsBase(object):
                     argparse_grp.add_argument(_arg_name, **_d)
 
     @staticmethod
-    def _parse_yaml_opts(opts_yaml):
-        _opt_names = []
-        _opt_groups = OrderedDict()
+    def _parse_yaml_opts(opts_yaml: Union[str, bytes]):
+        """
+
+        Parameters
+        ----------
+        opts_yaml
+
+        Returns
+        -------
+
+        """
+        _opts_byname = OrderedDict()
+        _opts_bygroup = OrderedDict()
         for grp in yaml.load(opts_yaml, Loader=yaml.FullLoader):
             grp_name, args = list(grp.items())[0]
-            _opt_groups[grp_name] = OrderedDict()
+            _opts_bygroup[grp_name] = OrderedDict()
             for arg in args:
                 arg_name, d = list(arg.items())[0]
-                _opt_groups[grp_name][arg_name] = d
-                _opt_names.append(arg_name)
-        return _opt_names, _opt_groups
+                _opts_byname[arg_name] = d
+                _opts_bygroup[grp_name][arg_name] = d
+
+        return _opts_byname, _opts_bygroup
 
     def outfile_path(self, suffix):
         basename = '%s-%s' % (self.exp_tag, suffix)

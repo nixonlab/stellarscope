@@ -66,6 +66,7 @@ ST_USAGE = ''' %(prog)s <command> [<args>]
 The most commonly used commands are:
     cellsort  Sort and filter BAM file according to cell barcode    
     assign    Reassign ambiguous fragments that map to repetitive elements
+    resume    Resume previous run from checkpoint file
 '''
 
 class StellarscopeHelpFormatter(
@@ -107,7 +108,7 @@ def stellarscope():
     resume_parser = subparsers.add_parser(
         'resume',
         description='''Resume a previous stellarscope run''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=StellarscopeHelpFormatter,
     )
     stellarscope_resume.StellarscopeResumeOptions.add_arguments(resume_parser)
     resume_parser.set_defaults(func=stellarscope_resume.run)
