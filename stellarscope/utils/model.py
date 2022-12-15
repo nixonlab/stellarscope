@@ -56,7 +56,7 @@ def process_overlap_frag(pairs, overlap_feats):
     for feat, falns in byfeature.items():
         # Sort alignments by score + length
         falns.sort(key=lambda x: x.alnscore + x.alnlen,
-                  reverse=True)
+                   reverse=True)
         # Add best alignment to mappings
         _topaln = falns[0]
         _maps.append(
@@ -84,6 +84,7 @@ class Telescope(object):
     """
 
     """
+
     def __init__(self, opts):
 
         self.opts = opts               # Command line options
@@ -122,12 +123,12 @@ class Telescope(object):
         _feat_list = sorted(self.feat_index, key=self.feat_index.get)
         _flen_list = [self.feature_length[f] for f in _feat_list]
         np.savez(filename,
-                 _run_info = list(self.run_info.items()),
-                 _flen_list = _flen_list,
-                 _feat_list = _feat_list,
-                 _read_list = sorted(self.read_index, key=self.read_index.get),
-                 _shape = self.shape,
-                 _raw_scores_data = self.raw_scores.data,
+                 _run_info=list(self.run_info.items()),
+                 _flen_list=_flen_list,
+                 _feat_list=_feat_list,
+                 _read_list=sorted(self.read_index, key=self.read_index.get),
+                 _shape=self.shape,
+                 _raw_scores_data=self.raw_scores.data,
                  _raw_scores_indices=self.raw_scores.indices,
                  _raw_scores_indptr=self.raw_scores.indptr,
                  _raw_scores_shape=self.raw_scores.shape,
@@ -144,7 +145,7 @@ class Telescope(object):
             v = str2int(loader['_run_info'][r, 1])
             obj.run_info[k] = v
         obj.feature_length = Counter()
-        for f,fl in zip(loader['_feat_list'], loader['_flen_list']):
+        for f, fl in zip(loader['_feat_list'], loader['_flen_list']):
             obj.feature_length[f] = fl
         ''' Read and feature indexes '''
         obj.read_index = {n: i for i, n in enumerate(loader['_read_list'])}
@@ -155,7 +156,7 @@ class Telescope(object):
         obj.raw_scores = csr_matrix((
             loader['_raw_scores_data'],
             loader['_raw_scores_indices'],
-            loader['_raw_scores_indptr'] ),
+            loader['_raw_scores_indptr']),
             shape=loader['_raw_scores_shape']
         )
         return obj
@@ -193,7 +194,7 @@ class Telescope(object):
         lg.info('Loading alignments in parallel...')
         regions = region_iter(self.ref_names,
                               self.ref_lengths,
-                              max(self.ref_lengths) # Do not split contigs
+                              max(self.ref_lengths)  # Do not split contigs
                               )
 
         opt_d = {
@@ -205,7 +206,7 @@ class Telescope(object):
         _minAS, _maxAS = BIG_INT, -BIG_INT
         alninfo = Counter()
         mfiles = []
-        pool = Pool(processes = self.opts.ncpu)
+        pool = Pool(processes=self.opts.ncpu)
         _loadfunc = functools.partial(alignment.fetch_region,
                                       self.opts.samfile,
                                       annotation,
@@ -233,7 +234,8 @@ class Telescope(object):
         _omode, _othresh = self.opts.overlap_mode, self.opts.overlap_threshold
 
         _mappings = []
-        assign = Assigner(annotation, _nfkey, _omode, _othresh, self.opts).assign_func()
+        assign = Assigner(annotation, _nfkey, _omode, _othresh,
+                          self.opts).assign_func()
 
         if self.single_cell:
             _all_read_barcodes = []
@@ -268,7 +270,8 @@ class Telescope(object):
 
                 ''' if single-cell, add cell's barcode to the list '''
                 if self.single_cell and self.opts.barcode_tag in aln_tags:
-                    _all_read_barcodes.append(aln_tags.get(self.opts.barcode_tag))
+                    _all_read_barcodes.append(
+                        aln_tags.get(self.opts.barcode_tag))
 
                 ''' Fragment is ambiguous if multiple mappings'''
                 _mapped = [a for a in alns if not a.is_unmapped]
@@ -312,12 +315,15 @@ class Telescope(object):
         if self.single_cell:
             _unique_read_barcodes = set(_all_read_barcodes)
             if self.whitelist is not None:
-                self.barcodes = list(_unique_read_barcodes.intersection(self.whitelist))
-                lg.info(f'{len(_unique_read_barcodes)} unique barcodes found in the alignment file, '
-                        f'{len(self.barcodes)} of which were also found in the barcode file.')
+                self.barcodes = list(
+                    _unique_read_barcodes.intersection(self.whitelist))
+                lg.info(
+                    f'{len(_unique_read_barcodes)} unique barcodes found in the alignment file, '
+                    f'{len(self.barcodes)} of which were also found in the barcode file.')
             else:
                 self.barcodes = list(_unique_read_barcodes)
-                lg.info(f'{len(self.barcodes)} unique barcodes found in the alignment file.')
+                lg.info(
+                    f'{len(self.barcodes)} unique barcodes found in the alignment file.')
 
         ''' Loading complete '''
         if _update_sam:
@@ -364,14 +370,15 @@ class Telescope(object):
         ''' Update counts '''
         if _isparallel:
             # Default for nunmap_idx is zero
-            unmap_both = self.run_info.get('nunmap_idx', 0) - alninfo['unmap_x']
+            unmap_both = self.run_info.get('nunmap_idx', 0) - alninfo[
+                'unmap_x']
             alninfo['unmapped'] = old_div(unmap_both, 2)
             for cs, desc in alignment.CODES:
                 ci = alignment.CODE_INT[cs]
                 if cs not in alninfo and ci in rcodes:
                     alninfo[cs] = len(rcodes[ci])
-                if cs in ['SM','PM','PX'] and ci in rcodes:
-                    _a = sum(v>1 for k,v in rcodes[ci].items())
+                if cs in ['SM', 'PM', 'PX'] and ci in rcodes:
+                    _a = sum(v > 1 for k, v in rcodes[ci].items())
                     alninfo['unique'] += (len(rcodes[ci]) - _a)
                     alninfo['ambig'] += _a
             alninfo['total_fragments'] = alninfo['unmapped'] + \
@@ -385,7 +392,7 @@ class Telescope(object):
             # alninfo['overlap_ambig'] = alninfo['feat_A']
 
         ''' Tweak alninfo '''
-        for cs,desc in alignment.CODES:
+        for cs, desc in alignment.CODES:
             if cs in alninfo:
                 alninfo[desc] = alninfo[cs]
                 del alninfo[cs]
@@ -395,20 +402,20 @@ class Telescope(object):
 
         """ Remove rows with only __nofeature """
         rownames = np.array(sorted(_ridx, key=_ridx.get))
-        assert _fidx[self.opts.no_feature_key] == 0, "No feature key is not first column!"
+        assert _fidx[
+                   self.opts.no_feature_key] == 0, "No feature key is not first column!"
 
         # Remove nofeature column then find rows with nonzero values
-        _nz = scipy.sparse.csc_matrix(_m1)[:,1:].sum(1).nonzero()[0]
+        _nz = scipy.sparse.csc_matrix(_m1)[:, 1:].sum(1).nonzero()[0]
         # Subset scores and read names
-        self.raw_scores = csr_matrix(csr_matrix(_m1)[_nz, ])
-        _ridx = {v:i for i,v in enumerate(rownames[_nz])}
+        self.raw_scores = csr_matrix(csr_matrix(_m1)[_nz,])
+        _ridx = {v: i for i, v in enumerate(rownames[_nz])}
 
         # Set the shape
         self.shape = (len(_ridx), len(_fidx))
         # Ambiguous mappings
         alninfo['overlap_unique'] = np.sum(self.raw_scores.count(1) == 1)
         alninfo['overlap_ambig'] = self.shape[0] - alninfo['overlap_unique']
-
 
     """
     def load_mappings(self, samfile_path):
@@ -429,8 +436,6 @@ class Telescope(object):
                             len(_mappings) / 1e6))
         return _mappings
     """
-
-
 
     """
     def _mapping_to_matrix(self, mappings):
@@ -470,31 +475,31 @@ class Telescope(object):
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
         _stats_rounding = pd.Series([2, 3, 2, 3],
-                                    index = ['final_conf',
-                                             'final_prop',
-                                             'init_best_avg',
-                                             'init_prop']
+                                    index=['final_conf',
+                                           'final_prop',
+                                           'init_best_avg',
+                                           'init_prop']
                                     )
 
         # Report information for run statistics
         _stats_report0 = {
-            'transcript': _fnames,                                          # transcript
-            'transcript_length': [_flens[f] for f in _fnames],              # tx_len
-            'final_conf': tl.reassign('conf', _rprob).sum(0).A1,            # final_conf
-            'final_prop': tl.pi,                                            # final_prop
-            'init_aligned': tl.reassign('all', initial=True).sum(0).A1,     # init_aligned
-            'unique_count': tl.reassign('unique').sum(0).A1,                # unique_count
-            'init_best': tl.reassign('exclude', initial=True).sum(0).A1,    # init_best
-            'init_best_random': tl.reassign('choose', initial=True).sum(0).A1,  # init_best_random
-            'init_best_avg': tl.reassign('average', initial=True).sum(0).A1,    # init_best_avg
-            'init_prop': tl.pi_init                                             # init_prop
+            'transcript': _fnames,
+            'transcript_length': [_flens[f] for f in _fnames],
+            'final_conf': tl.reassign('conf', _rprob).sum(0).A1,
+            'final_prop': tl.pi,
+            'init_aligned': tl.reassign('all', initial=True).sum(0).A1,
+            'unique_count': tl.reassign('unique').sum(0).A1,
+            'init_best': tl.reassign('exclude', initial=True).sum(0).A1,
+            'init_best_random': tl.reassign('choose', initial=True).sum(0).A1,
+            'init_best_avg': tl.reassign('average', initial=True).sum(0).A1,
+            'init_prop': tl.pi_init
         }
 
         # Convert report into data frame
         _stats_report = pd.DataFrame(_stats_report0)
 
         # Sort the report by transcript proportion
-        _stats_report.sort_values('final_prop', ascending = False, inplace = True)
+        _stats_report.sort_values('final_prop', ascending=False, inplace=True)
 
         # Round decimal values
         _stats_report = _stats_report.round(_stats_rounding)
@@ -502,7 +507,7 @@ class Telescope(object):
         # Report information for transcript counts
         _counts0 = {
             'transcript': _fnames,  # transcript
-            'count': tl.reassign(_rmethod, _rprob).sum(0).A1 # final_count
+            'count': tl.reassign(_rmethod, _rprob).sum(0).A1
         }
 
         # Rotate the report
@@ -538,7 +543,8 @@ class Telescope(object):
                 'CL': ' '.join(sys.argv),
             })
             outsam = pysam.AlignmentFile(filename, 'wb', header=header)
-            for code, pairs in alignment.fetch_fragments_seq(sf, until_eof=True):
+            for code, pairs in alignment.fetch_fragments_seq(sf,
+                                                             until_eof=True):
                 if len(pairs) == 0: continue
                 ridx = self.read_index[pairs[0].query_name]
                 for aln in pairs:
@@ -554,10 +560,10 @@ class Telescope(object):
                         fidx = self.feat_index[aln.r1.get_tag('ZF')]
                         prob = tl.z[ridx, fidx]
                         aln.set_mapq(phred(prob))
-                        aln.set_tag('XP', int(round(prob*100)))
+                        aln.set_tag('XP', int(round(prob * 100)))
                         if mat[ridx, fidx] > 0:
                             aln.unset_flag(pysam.FSECONDARY)
-                            aln.set_tag('YC',c2str(D2PAL['vermilion']))
+                            aln.set_tag('YC', c2str(D2PAL['vermilion']))
                         else:
                             aln.set_flag(pysam.FSECONDARY)
                             if prob >= 0.2:
@@ -569,7 +575,7 @@ class Telescope(object):
 
     def print_summary(self, loglev=lg.WARNING):
         _d = Counter()
-        for k,v in self.run_info.items():
+        for k, v in self.run_info.items():
             try:
                 _d[k] = int(v)
             except ValueError:
@@ -590,11 +596,14 @@ class Telescope(object):
         lg.log(loglev, '--')
         lg.log(loglev, '    {} fragments mapped to reference; of these'.format(
             _d['pair_mapped'] + _d['pair_mixed'] + _d['single_mapped']))
-        lg.log(loglev, '        {} had one unique alignment.'.format(_d['unique']))
-        lg.log(loglev, '        {} had multiple alignments.'.format(_d['ambig']))
+        lg.log(loglev,
+               '        {} had one unique alignment.'.format(_d['unique']))
+        lg.log(loglev,
+               '        {} had multiple alignments.'.format(_d['ambig']))
         lg.log(loglev, '--')
-        lg.log(loglev, '    {} fragments overlapped annotation; of these'.format(
-            _d['overlap_unique'] + _d['overlap_ambig']))
+        lg.log(loglev,
+               '    {} fragments overlapped annotation; of these'.format(
+                   _d['overlap_unique'] + _d['overlap_ambig']))
         lg.log(loglev, '        {} map to one locus.'.format(
             _d['overlap_unique']))
         lg.log(loglev, '        {} map to multiple loci.'.format(
@@ -653,7 +662,7 @@ class TelescopeLikelihood(object):
         # is the expected value for fragment i originating from transcript j. The
         # initial estimate is the normalized mapping qualities:
         # z_init[i,] = Q[i,] / sum(Q[i,])
-        self.z = None # self.Q.norm(1)
+        self.z = None  # self.Q.norm(1)
 
         self.epsilon = opts.em_epsilon
         self.max_iter = opts.max_iter
@@ -661,20 +670,20 @@ class TelescopeLikelihood(object):
         # pi[j] is the proportion of fragments that originate from
         # transcript j. Initial value assumes that all transcripts contribute
         # equal proportions of fragments
-        self.pi = np.repeat(1./self.K, self.K)
+        self.pi = np.repeat(1. / self.K, self.K)
         self.pi_init = None
 
         # theta[j] is the proportion of non-unique fragments that need to be
         # reassigned to transcript j. Initial value assumes that all transcripts
         # are reassigned an equal proportion of fragments
-        self.theta = np.repeat(1./self.K, self.K)
+        self.theta = np.repeat(1. / self.K, self.K)
         self.theta_init = None
 
         # Y[i] is the ambiguity indicator for fragment i, where Y[i]=1 if
         # fragment i is aligned to multiple transcripts and Y[i]=0 otherwise.
         # Store as N x 1 matrix
         self.Y = (self.Q.count(1) > 1).astype(np.int)
-        self._yslice = self.Y[:,0].nonzero()[0]
+        self._yslice = self.Y[:, 0].nonzero()[0]
 
         # Log-likelihood score
         self.lnl = float('inf')
@@ -684,16 +693,17 @@ class TelescopeLikelihood(object):
         self.theta_prior = opts.theta_prior
 
         # Precalculated values
-        self._weights = self.Q.max(1)             # Weight assigned to each fragment
-        self._total_wt = self._weights.sum()      # Total weight
-        self._ambig_wt = self._weights.multiply(self.Y).sum() # Weight of ambig frags
-        self._unique_wt = self._weights.multiply(1-self.Y).sum()
+        self._weights = self.Q.max(1)  # Weight assigned to each fragment
+        self._total_wt = self._weights.sum()  # Total weight
+        self._ambig_wt = self._weights.multiply(
+            self.Y).sum()  # Weight of ambig frags
+        self._unique_wt = self._weights.multiply(1 - self.Y).sum()
 
         # Weighted prior values
         self._pi_prior_wt = self.pi_prior * self._weights.max()
         self._theta_prior_wt = self.theta_prior * self._weights.max()
         #
-        self._pisum0 = self.Q.multiply(1-self.Y).sum(0)
+        self._pisum0 = self.Q.multiply(1 - self.Y).sum(0)
         lg.debug('done initializing model')
 
     def estep(self, pi, theta):
@@ -762,9 +772,9 @@ class TelescopeLikelihood(object):
         return cur
 
     def em(self, use_likelihood=False, loglev=lg.DEBUG):
-        inum = 0               # Iteration number
-        converged = False      # Has convergence been reached?
-        reached_max = False    # Has max number of iterations been reached?
+        inum = 0  # Iteration number
+        converged = False  # Has convergence been reached?
+        reached_max = False  # Has max number of iterations been reached?
 
         msgD = 'Iteration {:d}, diff={:.5g}'
         msgL = 'Iteration {:d}, lnl= {:.5e}, diff={:.5g}'
@@ -796,12 +806,11 @@ class TelescopeLikelihood(object):
             reached_max = inum >= self.max_iter
             self.z = _z
             self.pi, self.theta = _pi, _theta
-            lg.log(loglev, "time: {}".format(perf_counter()-xtime))
+            lg.log(loglev, "time: {}".format(perf_counter() - xtime))
 
         _con = 'converged' if converged else 'terminated'
         if not use_likelihood:
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
-
 
         lg.log(loglev, f'EM {_con} after {inum:d} iterations.')
         lg.log(loglev, f'Final log-likelihood: {self.lnl:f}.')
@@ -810,7 +819,7 @@ class TelescopeLikelihood(object):
     def reassign(self,
                  mode: str,
                  thresh: Optional[float] = None
-    ) -> csr_matrix:
+                 ) -> csr_matrix:
         """Reassign fragments to expected transcripts
 
         Model fitting using EM finds the expected fragment assignment weights
@@ -888,8 +897,10 @@ class TelescopeLikelihood(object):
             return isbest.norm(1)
         elif mode == 'initial_unique':
             ''' Remove ambiguous rows and set nonzero values to 1 '''
-            assignments = csr_matrix(self.Q.multiply(1 - self.Y) > 0, dtype=np.uint8)
-            assignments_old = self.Q.norm(1).multiply(1 - self.Y).ceil().astype(np.uint8)
+            assignments = csr_matrix(self.Q.multiply(1 - self.Y) > 0,
+                                     dtype=np.uint8)
+            assignments_old = self.Q.norm(1).multiply(
+                1 - self.Y).ceil().astype(np.uint8)
             assert assignments.check_equal(assignments_old)
             return assignments
         elif mode == 'initial_random':
@@ -905,8 +916,10 @@ class TelescopeLikelihood(object):
         raise StellarscopeError('Reassignment method did not return')
         return
 
+
 class Assigner:
-    def __init__(self, annotation: annotation.BaseAnnotation, opts: OptionsBase) -> None:
+    def __init__(self, annotation: annotation.BaseAnnotation,
+                 opts: OptionsBase) -> None:
         self.annotation = annotation
         self.no_feature_key = opts.no_feature_key
         self.overlap_mode = opts.overlap_mode
@@ -927,7 +940,8 @@ class Assigner:
                     frag_strand = '-' if self.stranded_mode[-1] == 'F' else '+'
                 else:
                     frag_strand = '+' if self.stranded_mode[0] == 'F' else '-'
-            f = self.annotation.intersect_blocks(pair.ref_name, blocks, frag_strand)
+            f = self.annotation.intersect_blocks(pair.ref_name, blocks,
+                                                 frag_strand)
             if not f:
                 return self.no_feature_key
             # Calculate the percentage of fragment mapped
@@ -954,14 +968,14 @@ class Assigner:
             assert False
 
 
-
 """ 
 Stellarscope model
 """
 
+
 def select_umi_representatives(
-        umi_feat_scores: list[tuple(str, dict[int,int])],
-        best_score : bool = False
+        umi_feat_scores: list[tuple[str, dict[int, int]]],
+        best_score: bool = False
 ) -> (list[str], list[bool]):
     """ Select best representative(s) among reads with same BC+UMI
 
@@ -980,7 +994,7 @@ def select_umi_representatives(
     ''' Subset each vector for top scores (optional) '''
     _subset_vecs = []
     if best_score:
-        for i,vec in enumerate(_score_vecs):
+        for i, vec in enumerate(_score_vecs):
             _sub = {ft: sc for ft, sc in vec if sc == max(vec.values())}
             _subset_vecs.append(_sub)
     else:
@@ -1002,7 +1016,7 @@ def select_umi_representatives(
             - calculate ranking statistics for reads (component_rank)
             - sort so that representative (best) read is first
     '''
-    component_rep = {} # component number -> representative row index
+    component_rep = {}  # component number -> representative row index
     reps = []
     is_excluded = [True] * n
     for c_i in range(ncomp):
@@ -1013,7 +1027,7 @@ def select_umi_representatives(
                 max(scores) / sum(scores), # maximum normalized score
                 -len(scores),              # number of features (ambiguity)
                 max(scores),               # maximum score
-                sum(scores),               # total scope
+                sum(scores),               # total score
                 row,
             ))
 
@@ -1045,13 +1059,14 @@ def fit_pooling_model(
         TelescopeLikelihood object containing the fitted posterior probability
         matrix (`TelescopeLikelihood.z`).
     """
+
     def fit_pseudobulk(scoremat):
         st_model = TelescopeLikelihood(scoremat, opts)
         st_model.em(use_likelihood=opts.use_likelihood)
         return st_model
 
     def fit_individual(scoremat):
-        z_mats = [] # can remove?
+        z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
         for _bcode, _rowset in st.bcode_ridx_map.items():
@@ -1062,7 +1077,7 @@ def fit_pooling_model(
             ''' Run EM '''
             lg.debug(f"Running EM for {_bcode}")
             _submod.em(use_likelihood=opts.use_likelihood)
-            z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
+            z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
             all_z += _submod.z
 
             log_likelihoods.append(_submod.lnl)
@@ -1087,7 +1102,7 @@ def fit_pooling_model(
         return st_model
 
     def fit_celltype(scoremat):
-        z_mats = [] # can remove?
+        z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
         for _ctype in st.celltypes:
@@ -1108,7 +1123,7 @@ def fit_pooling_model(
             ''' Run EM '''
             lg.debug(f"Running EM for {_ctype}")
             _submod.em(use_likelihood=opts.use_likelihood)
-            z_mats.append(_submod.z.copy()) # QUESTION: do we need copy?
+            z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
             all_z += _submod.z
 
             log_likelihoods.append(_submod.lnl)
@@ -1132,7 +1147,6 @@ def fit_pooling_model(
         st_model.lnl = sum(log_likelihoods)
         return st_model
 
-
     ''' fit_pooling_model '''
     if opts.ignore_umi:
         assert st.corrected is None, 'ignore_umi but st_obj.corrected is not None'
@@ -1140,7 +1154,6 @@ def fit_pooling_model(
     else:
         assert st.corrected.shape == st.shape, 'umi correction but st_obj.corrected is not None'
         _scoremat = st.corrected
-
 
     if opts.pooling_mode == 'individual':
         st_model = fit_individual(_scoremat)
@@ -1159,10 +1172,12 @@ def fit_pooling_model(
 class StellarscopeError(Exception):
     pass
 
+
 class AlignmentValidationError(StellarscopeError):
     def __init__(self, msg, alns):
         super().__init__(msg)
         self.alns = alns
+
     def __str__(self):
         ret = super().__str__() + '\n'
         for aln in self.alns:
@@ -1171,6 +1186,7 @@ class AlignmentValidationError(StellarscopeError):
                 ret += aln.r2.to_string() + '\n'
 
         return ret
+
 
 class Stellarscope(Telescope):
 
@@ -1247,10 +1263,10 @@ class Stellarscope(Telescope):
         self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
         self.bcode_umi_map = defaultdict(list)  # {barcode (str): umis (:obj:`set` of str)}
 
-        self.whitelist = {}                      # {barcode (str): index (int)}
+        self.whitelist = {}                     # {barcode (str): index (int)}
 
         ''' Instance variables for pooling mode = "celltype" '''
-        self.bcode_ctype_map: dict[str,str] = {}
+        self.bcode_ctype_map: dict[str, str] = {}
         self.ctype_bcode_map = defaultdict(set)
         self.celltypes: list[str] = []
         # NOTE: we could reduce the size of the barcode-celltype map by
@@ -1278,7 +1294,6 @@ class Stellarscope(Telescope):
             #     'celltype': self.bcode_ctype_map.values()
             # })
 
-
         return
 
     def _load_whitelist(self):
@@ -1305,7 +1320,6 @@ class Stellarscope(Telescope):
     #     seed = np.uint32(seed)
     #
     #     return seed
-
 
     def load_alignment(self, annotation: annotation.BaseAnnotation):
         """
@@ -1359,9 +1373,8 @@ class Stellarscope(Telescope):
         mapping_to_matrix(maps, alninfo)
         lg.debug(str(alninfo))
 
-        for k,v in alninfo.items():
+        for k, v in alninfo.items():
             self.run_info[k] = v
-
 
     def _load_sequential(self, annotation):
         """ Load queryname sorted BAM sequentially
@@ -1372,11 +1385,13 @@ class Stellarscope(Telescope):
         Returns:
 
         """
+
         def skip_fragment():
             if self.opts.updated_sam:
                 [p.write(bam_u) for p in alns]
 
-        def process_fragment(alns: list['AlignedPair'],  overlap_feats: list[str]):
+        def process_fragment(alns: list['AlignedPair'],
+                             overlap_feats: list[str]):
             """ Find the best alignment for each locus
 
             Parameters
@@ -1438,13 +1453,13 @@ class Stellarscope(Telescope):
         alninfo = OrderedDict()
         alninfo['total_fragments'] = 0  # total number of fragments
         for code, desc in ALNCODES:
-            alninfo[code] = 0           # alignment code
-        alninfo['nofeat_U'] = 0         # uniquely aligns outside annotation
-        alninfo['nofeat_A'] = 0         # ambiguously aligns outside annotation
-        alninfo['feat_U'] = 0           # uniquely aligns overlapping annotation
-        alninfo['feat_A'] = 0           # ambiguously aligns overlapping annotation
-        alninfo['minAS'] = BIG_INT      # minimum alignment score
-        alninfo['maxAS'] = -BIG_INT      # maximum alignment score
+            alninfo[code] = 0       # alignment code
+        alninfo['nofeat_U'] = 0     # uniquely aligns outside annotation
+        alninfo['nofeat_A'] = 0     # ambiguously aligns outside annotation
+        alninfo['feat_U'] = 0       # uniquely aligns overlapping annotation
+        alninfo['feat_A'] = 0       # ambiguously aligns overlapping annotation
+        alninfo['minAS'] = BIG_INT  # minimum alignment score
+        alninfo['maxAS'] = -BIG_INT # maximum alignment score
 
         # _minAS = BIG_INT
         # _maxAS = -BIG_INT
@@ -1539,7 +1554,6 @@ class Stellarscope(Telescope):
 
         return _mappings, alninfo
 
-
     def dedup_umi(self, output_report=True):
         """
 
@@ -1549,7 +1563,7 @@ class Stellarscope(Telescope):
         """
         exclude_qnames: dict[str, int] = {}  # reads to be excluded
         # duplicated_umis is redundant - could remove this if needed
-        duplicated_umis = defaultdict(lambda: {'reps':[], 'exclude': []})
+        duplicated_umis = defaultdict(lambda: {'reps': [], 'exclude': []})
 
         if output_report:
             umiFH = open(self.opts.outfile_path('umi_tracking.txt'), 'w')
@@ -1570,8 +1584,8 @@ class Stellarscope(Telescope):
             ''' multiple reads with same barcode+umi '''
             umi_feat_scores = []
             for qname in qnames.keys():
-                row_m = self.raw_scores[self.read_index[qname], ]
-                vec = {ft:sc for ft,sc in zip(row_m.indices, row_m.data)}
+                row_m = self.raw_scores[self.read_index[qname],]
+                vec = {ft: sc for ft, sc in zip(row_m.indices, row_m.data)}
                 assert self.feat_index[self.opts.no_feature_key] == 0
                 _ = vec.pop(0, None)
                 umi_feat_scores.append((qname, vec))
@@ -1584,7 +1598,8 @@ class Stellarscope(Telescope):
                     exstr = 'EX' if ex else 'REP'
                     # We could use feature names in the score vector and make
                     # it look nicer. But this is OK for now.
-                    print(f'\t{qname}\t{comp}\t{exstr}\t{str(vec)}', file=umiFH)
+                    print(f'\t{qname}\t{comp}\t{exstr}\t{str(vec)}',
+                          file=umiFH)
 
             for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
                 if ex:
@@ -1599,16 +1614,19 @@ class Stellarscope(Telescope):
         ''' Remove excluded reads '''
         # sanity check
         for t, d in duplicated_umis.items():
-            assert len(d['exclude']) == len(set(d['exclude'])), 'contains duplicates'
+            assert len(d['exclude']) == len(
+                set(d['exclude'])), 'contains duplicates'
             assert len(d['reps']) == len(set(d['reps'])), 'contains duplicates'
             n0 = len(bcumi_read[t])
             n1 = len(d['exclude']) + len(d['reps'])
             assert n0 == n1
 
         if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00a-duplicated_umis'), duplicated_umis)
+            dump_data(self.opts.outfile_path('00a-duplicated_umis'),
+                      duplicated_umis)
 
-        exclude_rows = sorted(self.read_index[qname] for qname in exclude_qnames)
+        exclude_rows = sorted(
+            self.read_index[qname] for qname in exclude_qnames)
 
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00a-exclude_rows'), exclude_rows)
@@ -1622,13 +1640,16 @@ class Stellarscope(Telescope):
         exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00a-exclude_mat'), exclude_mat)
-            dump_data(self.opts.outfile_path('00a-uncorrected'), self.raw_scores)
+            dump_data(self.opts.outfile_path('00a-uncorrected'),
+                      self.raw_scores)
 
-        self.corrected = (self.raw_scores - self.raw_scores.multiply(exclude_mat))
+        self.corrected = (
+                    self.raw_scores - self.raw_scores.multiply(exclude_mat))
 
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00b-corrected'), self.corrected)
-            dump_data(self.opts.outfile_path('00b-uncorrected'), self.raw_scores)
+            dump_data(self.opts.outfile_path('00b-uncorrected'),
+                      self.raw_scores)
 
         # sanity check
         for r in range(self.shape[0]):
@@ -1701,6 +1722,7 @@ class Stellarscope(Telescope):
         -------
 
         """
+
         def reassign_using_mode(reassign_mode, output_mtx, conf_prob):
             ''' Reassign reads '''
             _assigned = tl.reassign(reassign_mode, conf_prob)
@@ -1755,7 +1777,7 @@ class Stellarscope(Telescope):
             _meta['reassign_mode'] = reassign_mode
             _meta['command'] = ' '.join(sys.argv)
 
-            _comment_str = '\n '.join(f'{k}: {v}' for k,v in _meta.items())
+            _comment_str = '\n '.join(f'{k}: {v}' for k, v in _meta.items())
 
             scipy.io.mmwrite(output_mtx, tstacked, comment=_comment_str)
 
@@ -1848,7 +1870,7 @@ class Stellarscope(Telescope):
                 _stats_report.to_csv(outh, sep='\t', index=False)
 
         ''' Aggregate fragment assignments by cell using each of the 6 assignment methods'''
-        _methods = self.opts.reassign_mode # TelescopeLikelihood.REASSIGN_MODES
+        _methods = self.opts.reassign_mode
         _allbc = self.barcodes
         _bcidx = OrderedDict(
             {bcode: rows for bcode, rows in self.bcode_ridx_map.items() if
@@ -1867,7 +1889,7 @@ class Stellarscope(Telescope):
 
         for _method in _methods:
 
-            #if _method != _rmethod and not self.opts.use_every_reassign_mode:
+            # if _method != _rmethod and not self.opts.use_every_reassign_mode:
             #    continue
 
             counts_outfile = f'{counts_filename[:counts_filename.rfind(".")]}_{_method}.mtx'
@@ -1929,7 +1951,7 @@ class Stellarscope(Telescope):
         lg.log(loglev, '')
         return
 
-    def check_equal(self, other: Stellarscope, explain: bool=False):
+    def check_equal(self, other: Stellarscope, explain: bool = False):
         """ Check whether two Stellarscope objects are equal
 
         Parameters
@@ -2041,4 +2063,3 @@ class Stellarscope(Telescope):
             return f'<Stellarscope checkpoint={self.opts.checkpoint}>'
         else:
             return '<Stellarscope>'
-

@@ -159,17 +159,6 @@ class StellarscopeAssignOptions(utils.OptionsBase):
         ----------
         args
         """
-        # def validate_csv(_optname, _val, _opt_d):
-        #     if 'choices' not in _opt_d:
-        #         return _val.split(',') # no "choices" for option
-        #
-        #     _vallist = _val.split(',')
-        #     if not all(v in _opt_d['choices'] for v in _vallist):
-        #         msg = f'Invalid argument for `{_optname}`: {_val}. '
-        #         msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
-        #         raise StellarscopeError(msg)
-        #     return _vallist
-
         super().__init__(args)
 
         ''' Validate command-line args '''
