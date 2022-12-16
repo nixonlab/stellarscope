@@ -765,17 +765,44 @@ class TelescopeLikelihood(object):
         """
         lg.debug('CALL: TelescopeLikelihood.calculate_lnl()')
         try:
-            _amb = self.Q.multiply(self.Y).multiply(pi * theta)
-            _uni = self.Q.multiply(1 - self.Y).multiply(pi)
+            _ambQ = self.Q.multiply(self.Y)
+            _uniQ = self.Q.multiply(1 - self.Y)
+        except FloatingPointError:
+            # should not happen, handled in csr_matrix_plus.multiply
+            lg.debug('using extended precision (Q.multiply)')
+            _ambQ = self.Q.astype(np.longdouble).multiply(self.Y)
+            _uniQ = self.Q.astype(np.longdouble).multiply(1 - self.Y)
+
+        try:
+            _pitheta = pi * theta
+        except FloatingPointError:
+            lg.debug('using extended precision (pi * theta)')
+            _pitheta = np.longdouble(pi) * np.longdouble(theta)
+
+        try:
+            _amb = _ambQ.multiply(_pitheta)
+            _uni = _uniQ.multiply(pi)
             _inner = csr_matrix(_amb + _uni)
         except FloatingPointError:
-            lg.debug('using extended precision')
-            _amb = self.Q.astype(np.longdouble).multiply(self.Y).multiply(pi * theta)
-            _uni = self.Q.astype(np.longdouble).multiply(1 - self.Y).multiply(pi)
+            lg.debug('using extended precision (_amb,_uni multiply)')
+            _amb = _ambQ.multiply(_pitheta)
+            _uni = _uniQ.multiply(pi)
+
+        try:
             _inner = csr_matrix(_amb + _uni)
-        cur = z.multiply(_inner.log1p()).sum()
+            _log_inner = _inner.log1p()
+        except FloatingPointError:
+            lg.debug('using extended precision (_inner)')
+            _inner = csr_matrix(_amb + _uni).astype(np.longdouble)
+            _log_inner = _inner.log1p()
+
+        try:
+            ret = z.multiply(_log_inner).sum()
+        except FloatingPointError:
+            ret = z.astype(np.longdouble).multiply(_log_inner).sum()
+
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
-        return cur
+        return ret
 
     def em(self, use_likelihood=False, loglev=lg.DEBUG):
         inum = 0  # Iteration number
