@@ -14,6 +14,8 @@ import numpy as np
 import scipy.sparse
 from numpy.random import default_rng
 
+import logging as lg
+
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 
@@ -200,7 +202,12 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         return ret
 
     def multiply(self, other):
-        return type(self)(super().multiply(other))
+        try:
+            return type(self)(super().multiply(other))
+        except FloatingPointError:
+            lg.info('using extended precision')
+            longcopy = scipy.sparse.csr_matrix(self).astype(np.longdouble)
+            return type(self)(longcopy.multiply(other))
 
 
     def colsums(self) -> csr_matrix_plus:

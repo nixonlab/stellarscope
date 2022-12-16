@@ -62,7 +62,7 @@ def run(args):
         if opts.ignore_umi:
             lg.info('Skipping UMI deduplication (option --ignore_umi)')
         else:
-            lg.info('Removing UMI duplicates...')
+            lg.info('UMI deduplication...')
             stime = time()
             st_obj.dedup_umi()
             lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))

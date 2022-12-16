@@ -764,9 +764,15 @@ class TelescopeLikelihood(object):
 
         """
         lg.debug('CALL: TelescopeLikelihood.calculate_lnl()')
-        _amb = self.Q.multiply(self.Y).multiply(pi * theta)
-        _uni = self.Q.multiply(1 - self.Y).multiply(pi)
-        _inner = csr_matrix(_amb + _uni)
+        try:
+            _amb = self.Q.multiply(self.Y).multiply(pi * theta)
+            _uni = self.Q.multiply(1 - self.Y).multiply(pi)
+            _inner = csr_matrix(_amb + _uni)
+        except FloatingPointError:
+            lg.debug('using extended precision')
+            _amb = self.Q.astype(np.longdouble).multiply(self.Y).multiply(pi * theta)
+            _uni = self.Q.astype(np.longdouble).multiply(1 - self.Y).multiply(pi)
+            _inner = csr_matrix(_amb + _uni)
         cur = z.multiply(_inner.log1p()).sum()
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
         return cur
