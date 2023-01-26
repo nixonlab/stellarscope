@@ -804,6 +804,18 @@ class TelescopeLikelihood(object):
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
         return ret
 
+    def calculate_lnl_alt(self, z, pi, theta, Q=None, Y=None):
+        lg.debug('CALL: TelescopeLikelihood.calculate_lnl_alt()')
+        Q = Q if Q is not None else self.Q
+        Y = Y if Y is not None else self.Y
+
+        _pitheta = csr_matrix(pi).multiply(np.power(theta, Y))
+        _inner = _pitheta.multiply(Q)
+        _log_inner = _inner.log1p()
+        ret = z.multiply(_log_inner).sum()
+        lg.debug('EXIT: TelescopeLikelihood.calculate_lnl_alt()')
+        return ret
+
     def em(self, use_likelihood=False, loglev=lg.DEBUG):
         inum = 0  # Iteration number
         converged = False  # Has convergence been reached?
@@ -844,6 +856,7 @@ class TelescopeLikelihood(object):
         _con = 'converged' if converged else 'terminated'
         if not use_likelihood:
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
+            # self.lnl_alt = self.calculate_lnl_alt(self.z, self.pi, self.theta)
 
         lg.log(loglev, f'EM {_con} after {inum:d} iterations.')
         lg.log(loglev, f'Final log-likelihood: {self.lnl:f}.')
