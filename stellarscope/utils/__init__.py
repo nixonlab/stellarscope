@@ -351,3 +351,5 @@ def sha1_head(
     """
     return checksum_head(filename, hash_obj=hashlib.sha1(), maxsize=maxsize)
 
+
+USE_EXTENDED = False
