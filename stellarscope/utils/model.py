@@ -1628,9 +1628,10 @@ class Stellarscope(Telescope):
         -------
 
         """
+        umiinfo = OrderedDict()
         exclude_qnames: dict[str, int] = {}  # reads to be excluded
         # duplicated_umis is redundant - could remove this if needed
-        duplicated_umis = defaultdict(lambda: {'reps': [], 'exclude': []})
+        # duplicated_umis = defaultdict(lambda: {'reps': [], 'exclude': []})
 
         if output_report:
             umiFH = open(self.opts.outfile_path('umi_tracking.txt'), 'w')
@@ -1641,8 +1642,13 @@ class Stellarscope(Telescope):
             key = (self.read_bcode_map[qname], self.read_umi_map[qname])
             _ = bcumi_read[key].setdefault(qname, None)
 
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00a-bcumi_read'), bcumi_read)
+        umiinfo['Number of barcode+UMI pairs'] = len(bcumi_read)
+        reads_per_bcumi_dist = Counter(map(len, bcumi_read.values()))
+        for i in range(1, max(reads_per_bcumi_dist.keys())+1):
+            umiinfo[f'    pairs with {i} reads'] = reads_per_bcumi_dist[i]
+
+        for k,v in umiinfo.items():
+            lg.info(f'{k}: {v}')
 
         ''' Loop over all bc+umi pairs'''
         for (bc, umi), qnames in bcumi_read.items():
@@ -1671,15 +1677,17 @@ class Stellarscope(Telescope):
             for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
                 if ex:
                     _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
+                """
                     duplicated_umis[(bc, umi)]['exclude'].append(qname)
                 else:
                     duplicated_umis[(bc, umi)]['reps'].append(qname)
+                """
 
         if output_report:
             umiFH.close()
 
         ''' Remove excluded reads '''
-        # sanity check
+        """ sanity check
         for t, d in duplicated_umis.items():
             assert len(d['exclude']) == len(
                 set(d['exclude'])), 'contains duplicates'
@@ -1687,16 +1695,21 @@ class Stellarscope(Telescope):
             n0 = len(bcumi_read[t])
             n1 = len(d['exclude']) + len(d['reps'])
             assert n0 == n1
+        """
 
+        """
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00a-duplicated_umis'),
                       duplicated_umis)
+        """
 
         exclude_rows = sorted(
             self.read_index[qname] for qname in exclude_qnames)
 
+        """ 
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00a-exclude_rows'), exclude_rows)
+        """
 
         # exclude_qnames2 = set()
         # for k,d in duplicated_umis.items():
@@ -1713,19 +1726,22 @@ class Stellarscope(Telescope):
         self.corrected = (
                     self.raw_scores - self.raw_scores.multiply(exclude_mat))
 
+        """
         if self.opts.devmode:
             dump_data(self.opts.outfile_path('00b-corrected'), self.corrected)
             dump_data(self.opts.outfile_path('00b-uncorrected'),
                       self.raw_scores)
+        """
 
-        # sanity check
+        """ # sanity check
         for r in range(self.shape[0]):
             if r in exclude_rows:
                 assert self.corrected[r,].nnz == 0
             else:
                 assert self.raw_scores[r,].check_equal(self.corrected[r,])
+        """
 
-        return
+        return umiinfo
 
     def save(self, filename: Union[str, bytes, os.PathLike]):
         """ Save current state of Stellarscope object

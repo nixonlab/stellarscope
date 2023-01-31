@@ -59,3 +59,4 @@ stellarscope/data/*
 !stellarscope/data/annotation.gtf
 !stellarscope/data/stellarscope_report.tsv
 stellarscope-checkpoint.npz
+stellarscope/optimize/*
