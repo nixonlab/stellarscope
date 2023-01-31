@@ -70,7 +70,7 @@
             mode. If specified, an output file with the final count matrix will
             be generated for each reassignment mode. See `--reassign_mode`.
     - logfile:
-        type: str # argparse.FileType('w')
+        type: str
         help: |
           Log messages to this file. If not provided, output messages will be
           written to <stderr>.
@@ -165,6 +165,13 @@
                 considered, similar to the "best counts" approach.
               "total_hits" - every alignment has a weight of 1. Counts the 
                 number of initial alignments to each locus.
+    - seed:
+        type: int
+        help: |
+            Seed for random number generator, used by reassign modes 
+            "best_random" and "initial_random". Default is to calculate
+            seed from input files. If seed = -1, then fresh, unpredictable 
+            entropy will be pulled from the OS.
     - conf_prob:
         type: float
         default: 0.9

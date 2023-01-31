@@ -1275,42 +1275,6 @@ class Stellarscope(Telescope):
         ----------
         opts
         """
-
-        def load_celltype_file():
-            """ Load celltype assignments into Stellarscope object
-
-
-            Sets values for instance variables:
-                 `self.bcode_ctype_map`
-                 `self.ctype_bcode_map`
-                 `self.celltypes`
-                 `self.barcode_celltypes`
-
-            Returns
-            -------
-
-            """
-            lineparse = lambda l: tuple(map(str.strip, l.split('\t')[:2]))
-            with open(self.opts.celltype_tsv, 'r') as fh:
-                _gen = (lineparse(l) for l in fh)
-                # Check first line is valid barcode and not column header
-                _bc, _ct = next(_gen)
-                if re.match('^[ACGTacgt]+$', _bc):
-                    _ = self.bcode_ctype_map.setdefault(_bc, _ct)
-                    self.ctype_bcode_map[_ct].add(_bc)
-                # Add the rest without checking
-                for _bc, _ct in _gen:
-                    _ = self.bcode_ctype_map.setdefault(_bc, _ct)
-                    assert _ == _ct, f'Mismatch for {_bc}, "{_}" != "{_ct}"'
-                    self.ctype_bcode_map[_ct].add(_bc)
-
-            self.celltypes = sorted(set(self.bcode_ctype_map.values()))
-            self.barcode_celltypes = pd.DataFrame({
-                'barcode': self.bcode_ctype_map.keys(),
-                'celltype': self.bcode_ctype_map.values()
-            })
-            return
-
         super().__init__(opts)
         '''
         NOTE: Telescope() initializes the following instance variables:
@@ -1364,7 +1328,7 @@ class Stellarscope(Telescope):
 
         ''' Load celltype assignments '''
         if opts.pooling_mode == 'celltype':
-            load_celltype_file()
+            self.load_celltype_file()
             lg.info(f'{len(self.celltypes)} unique celltypes found.')
             # self.celltypes = sorted(set(self.bcode_ctype_map.values()))
             # self.barcode_celltypes = pd.DataFrame({
@@ -1387,17 +1351,42 @@ class Stellarscope(Telescope):
                 _ = _ret.setdefault(_bc, len(_ret))
         return _ret
 
-    # def get_random_seed(self):
-    #     """
-    #
-    #     Returns
-    #     -------
-    #
-    #     """
-    #     seed = int(self.sam_md5[:7], base=16) * int(self.gtf_md5[:7], base=16)
-    #     seed = np.uint32(seed)
-    #
-    #     return seed
+
+    def load_celltype_file(self):
+        """ Load celltype assignments into Stellarscope object
+
+
+        Sets values for instance variables:
+             `self.bcode_ctype_map`
+             `self.ctype_bcode_map`
+             `self.celltypes`
+             `self.barcode_celltypes`
+
+        Returns
+        -------
+
+        """
+        lineparse = lambda l: tuple(map(str.strip, l.split('\t')[:2]))
+        with open(self.opts.celltype_tsv, 'r') as fh:
+            _gen = (lineparse(l) for l in fh)
+            # Check first line is valid barcode and not column header
+            _bc, _ct = next(_gen)
+            if re.match('^[ACGTacgt]+$', _bc):
+                _ = self.bcode_ctype_map.setdefault(_bc, _ct)
+                self.ctype_bcode_map[_ct].add(_bc)
+            # Add the rest without checking
+            for _bc, _ct in _gen:
+                _ = self.bcode_ctype_map.setdefault(_bc, _ct)
+                assert _ == _ct, f'Mismatch for {_bc}, "{_}" != "{_ct}"'
+                self.ctype_bcode_map[_ct].add(_bc)
+
+        self.celltypes = sorted(set(self.bcode_ctype_map.values()))
+        self.barcode_celltypes = pd.DataFrame({
+            'barcode': self.bcode_ctype_map.keys(),
+            'celltype': self.bcode_ctype_map.values()
+        })
+        return
+
 
     def load_alignment(self, annotation: annotation.BaseAnnotation):
         """

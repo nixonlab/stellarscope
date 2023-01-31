@@ -161,6 +161,7 @@ class StellarscopeAssignOptions(utils.OptionsBase):
         """
         super().__init__(args)
 
+        self.rng = None
         ''' Validate command-line args '''
         # Validate conf_prob
         if not (0.5 < self.conf_prob <= 1.0):
@@ -174,26 +175,6 @@ class StellarscopeAssignOptions(utils.OptionsBase):
                 if m not in self.reassign_mode:
                     self.reassign_mode.append(m)
 
-        ''' Calculate SHA1 checksums (up to 1 GB) '''
-        ''' Create seed
-            Multiply short (7 digit) digests of samfile and gtffile and
-            cast to a 32-bit unsigned integer.
-        '''
-        self.seed = 12345
-        if hasattr(self, 'samfile') and self.samfile is not None:
-            self.samfile_sha1 = utils.sha1_head(self.samfile)
-            self.seed = int(self.samfile_sha1[:7], 16)
-
-        if hasattr(self, 'gtffile') and self.gtffile is not None:
-            self.gtffile_sha1 = utils.sha1_head(self.gtffile)
-            self.seed = self.seed * int(self.gtffile_sha1[:7], 16)
-
-        self.seed = np.uint32(self.seed)
-
-        ''' Create random number generator '''
-        self.rng = default_rng(self.seed)
-
-
         ''' Set tempdir '''
         if hasattr(self, 'tempdir') and self.tempdir is None:
             if hasattr(self, 'ncpu') and self.ncpu > 1:
@@ -201,6 +182,27 @@ class StellarscopeAssignOptions(utils.OptionsBase):
                 atexit.register(shutil.rmtree, self.tempdir)
 
         return
+
+    def init_rng(self, prev = None):
+        ''' Set seed for initializing random number generator '''
+        if self.seed is None:
+            _tmpseed = 1
+            if hasattr(self, 'samfile') and self.samfile is not None:
+                _samfile_sha1 = utils.sha1_head(self.samfile)
+                _tmpseed = int(_samfile_sha1[:7], 16)
+
+            if hasattr(self, 'gtffile') and self.gtffile is not None:
+                _gtffile_sha1 = utils.sha1_head(self.gtffile)
+                _tmpseed = _tmpseed * int(_gtffile_sha1[:7], 16)
+            self.seed = np.uint32(_tmpseed) if _tmpseed != 1 else None
+        elif self.seed == -1:
+            self.seed = None
+        else:
+            self.seed = np.uint32(self.seed)
+
+        self.rng = default_rng(seed = self.seed)
+        return
+
 
     def outfile_path(self, suffix):
         basename = '%s-%s' % (self.exp_tag, suffix)
@@ -217,6 +219,7 @@ def run(args):
 
     """
     opts = StellarscopeAssignOptions(args)
+    opts.init_rng()
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
 

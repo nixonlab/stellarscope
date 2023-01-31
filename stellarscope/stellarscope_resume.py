@@ -13,11 +13,14 @@ import gc
 import pkgutil
 
 import numpy as np
+from numpy.random import default_rng
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
 
-from .utils.model import Stellarscope, TelescopeLikelihood, fit_pooling_model
+from .utils.model import Stellarscope, StellarscopeError
+from .utils.model import TelescopeLikelihood
+from .utils.model import fit_pooling_model
 from .stellarscope_assign import StellarscopeAssignOptions
 
 __author__ = 'Matthew L. Bendall'
@@ -26,6 +29,58 @@ __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 class StellarscopeResumeOptions(StellarscopeAssignOptions):
 
     OPTS_YML = pkgutil.get_data('stellarscope', 'cmdopts/stellarscope_resume.yaml')
+
+    def resolve_options(self, prev: StellarscopeAssignOptions) -> None:
+        """
+
+        Parameters
+        ----------
+        prev
+
+        Returns
+        -------
+
+        """
+        # no_feature_key, celltype_tsv
+        # exp_tag, updated_sam, use_every_reassign_mode,
+        # logfile, quiet, debug, progress, devmode, old_report
+        # pooling_mode, reassign_mode, conf_prob, overlap_mode,
+
+        # Overwrite option
+        for optname in ["no_feature_key"]:
+            prev_val = getattr(prev, optname)
+            assert prev_val
+            setattr(self, optname, prev_val)
+
+        # Replace if None
+        for optname in ["pooling_mode", ]:
+            assert hasattr(self, optname)
+            if getattr(self, optname) is None:
+                prev_val = getattr(prev, optname)
+                if prev_val:
+                    lg.info(f'Using {optname} "{prev_val}" from checkpoint')
+                    setattr(self, optname, prev_val)
+                else:
+                    raise StellarscopeError(f'"--{optname}" must be provided.')
+
+        # outdir
+        if self.outdir is None:
+            lg.info(f'Using outdir "{os.path.dirname(self.checkpoint)}".')
+            self.outdir = os.path.dirname(self.checkpoint)
+
+        return
+
+    def init_rng(self, prev):
+        if self.seed is None:
+            self.seed = prev.seed
+        elif self.seed == -1:
+            self.seed = None
+        else:
+            self.seed = np.uint32(self.seed)
+
+        self.rng = default_rng(seed = self.seed)
+        return
+
 
 def run(args):
     """
@@ -38,22 +93,45 @@ def run(args):
     """
     opts = StellarscopeResumeOptions(args)
     utils.configure_logging(opts)
-    lg.info('\n{}\n'.format(opts))
     total_time = time()
 
     ''' Load Stellarscope object '''
     lg.info('Loading Stellarscope object from checkpoint...')
     stime = time()
     st_obj = Stellarscope.load(opts.checkpoint)
-
-    # Resolve options
-    prevopts = st_obj.opts
-    st_obj.opts = opts
-    st_obj.opts.no_feature_key = prevopts.no_feature_key
-    # opts.ignore_umi == prevopts.ignore_umi
-    # opts.reassign_mode == prevopts.reassign_mode
-
     lg.info(f"Loaded object in {fmtmins(time() - stime)}")
+
+    """ Resolve options """
+    prev_opts = st_obj.opts
+    opts.resolve_options(prev_opts)
+    opts.init_rng(prev_opts)
+    st_obj.opts = opts
+    lg.info('\n{}\n'.format(opts))
+
+    """ Single pooling mode """
+    lg.info(f'Using pooling mode(s): {opts.pooling_mode}')
+
+    if opts.pooling_mode == 'celltype':
+        # if len(st_obj.bcode_ctype_map):
+        #     lg.info(f'bcode_ctype_map contains data')
+        # if len(st_obj.ctype_bcode_map):
+        #     lg.info(f'ctype_bcode_map contains data')
+        # if len(st_obj.celltypes):
+        #     lg.info(f'celltypes contains data')
+        if opts.celltype_tsv:
+            if len(st_obj.bcode_ctype_map):
+                lg.info(f'Existing celltype assignments discarded.')
+            st_obj.load_celltype_file()
+            lg.info(f'{len(st_obj.celltypes)} unique celltypes found.')
+        else:
+            if len(st_obj.bcode_ctype_map):
+                lg.info(f'Existing celltype assignments found.')
+            else:
+                msg = 'celltype_tsv is required for pooling mode "celltype"'
+                raise StellarscopeError(msg)
+    else:
+        if opts.celltype_tsv:
+            lg.info('celltype_tsv is ignored for selected pooling modes.')
 
 
     ''' UMI correction '''
@@ -66,7 +144,7 @@ def run(args):
             stime = time()
             st_obj.dedup_umi()
             lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
-            st_obj.save(opts.outfile_path('checkpoint.corrected.pickle'))
+            st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
     else:
         lg.info('Checkpoint contains UMI corrected scores.')
         if opts.ignore_umi:
