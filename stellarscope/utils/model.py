@@ -29,6 +29,7 @@ from . import OptionsBase
 from . import log_progress
 from .helpers import dump_data
 from .sparse_plus import row_identity_matrix
+from .sparse_plus import bool_inv
 from .sparse_plus import csr_matrix_plus as csr_matrix
 
 from .colors import c2str, D2PAL, GPAL
@@ -1053,7 +1054,8 @@ Stellarscope model
 
 def select_umi_representatives(
         umi_feat_scores: list[tuple[str, dict[int, int]]],
-        best_score: bool = False
+        best_score: bool = False,
+        weighted: bool = False,
 ) -> (list[str], list[bool]):
     """ Select best representative(s) among reads with same BC+UMI
 
@@ -1061,60 +1063,102 @@ def select_umi_representatives(
     ----------
     umi_feat_scores
     best_score
+    weighted
 
     Returns
     -------
 
     """
+    def read_stats(vec: dict[int, int]) -> tuple[float, int, int ,int]:
+        """ Stats used to select best representative in duplicate set
+
+        Reads connected in a duplicate set are sorted according to these
+        statistics in descending order; the first read is selected.
+
+        Parameters
+        ----------
+        vec : dict[int, int]
+            Dictionary mapping feature indexes to alignment scores
+
+        Returns
+        -------
+        tuple[float, int, int, int]
+            Tuple with summary statistics
+
+        """
+        _scores = list(vec.values())
+        return (
+            max(_scores) / sum(_scores),  # maximum normalized score
+            -len(_scores),               # number of features (ambiguity)
+            max(_scores),                # maximum score
+            sum(_scores),                # total score
+        )
+
     ''' Unpack the list of tuples '''
-    _labels, _score_vecs = list(zip(*umi_feat_scores))
+    _labels, _score_vecs = map(list, zip(*umi_feat_scores))
 
     ''' Subset each vector for top scores (optional) '''
-    _subset_vecs = []
     if best_score:
-        for i, vec in enumerate(_score_vecs):
-            _sub = {ft: sc for ft, sc in vec if sc == max(vec.values())}
-            _subset_vecs.append(_sub)
+        def subset_topscore(d):
+            """ Return copy of dictionary with only max values """
+            return {ft: sc for ft, sc in d.items() if sc == max(d.values())}
+
+        _subset_vecs = [subset_topscore(vec) for vec in _score_vecs]
     else:
         _subset_vecs = _score_vecs
 
-    ''' Calculate adjacency matrix '''
     n = len(_subset_vecs)
-    graph = scipy.sparse.dok_matrix((n, n), dtype=np.uint8)
-    for i, j in itertools.combinations(range(n), 2):
-        inter = _subset_vecs[i].keys() & _subset_vecs[j].keys()
-        graph[i, j] = sum(_subset_vecs[i][x] for x in inter)
-        graph[j, i] = sum(_subset_vecs[j][x] for x in inter)
 
+    ''' Skip building adjacency matrix if all reads have mappings to the same
+        feature(s). Approach: Check if intersection of all feature lists is
+        greater than 0. (This should be faster than building adjacency matrix
+        and finding connected components)  
+    '''
+    shortcut = len(set.intersection(*map(set, _subset_vecs))) > 0
+    if shortcut:
+        _ranks = sorted(
+            ((*read_stats(v), r) for r,v in enumerate(_subset_vecs)),
+            reverse=True
+        )
+        is_excluded = [r != _ranks[0][-1] for r in range(n)]
+        return np.zeros(n, dtype=np.int32).tolist(), is_excluded
+
+    ''' Calculate adjacency matrix '''
+    graph = scipy.sparse.dok_matrix((n, n), dtype=np.uint64)
+    for i, j in itertools.combinations(range(n), 2):
+        _inter = _subset_vecs[i].keys() & _subset_vecs[j].keys()
+        if weighted:
+            graph[i, j] = sum(_subset_vecs[i][x] for x in _inter)
+            graph[j, i] = sum(_subset_vecs[j][x] for x in _inter)
+        else:
+            graph[i, j] = len(_inter)
+            graph[j, i] = len(_inter)
     ncomp, comps = connected_components(graph, directed=False)
 
     ''' Choose best read for each component.
         For each component:
             - select reads belonging to component
-            - calculate ranking statistics for reads (component_rank)
+            - calculate ranking statistics for reads (_ranks)
             - sort so that representative (best) read is first
     '''
-    component_rep = {}  # component number -> representative row index
-    reps = []
+    # component_rep = {}  # component number -> representative row index
+    # reps = []           # list of representative read names
     is_excluded = [True] * n
     for c_i in range(ncomp):
-        component_rank = []
+        _ranks = []
         for row in np.where(comps == c_i)[0].tolist():
-            scores = list(_score_vecs[row].values())
-            component_rank.append((
-                max(scores) / sum(scores), # maximum normalized score
-                -len(scores),              # number of features (ambiguity)
-                max(scores),               # maximum score
-                sum(scores),               # total score
-                row,
-            ))
-
-        component_rank.sort(reverse=True)
-        rep_index = component_rank[0][-1]
-        component_rep[c_i] = _labels[rep_index]
-        reps.append(_labels[rep_index])
+            _ranks.append((*read_stats(_subset_vecs[row]), row))
+        _ranks.sort(reverse=True)
+        rep_index = _ranks[0][-1]
+        # component_rep[c_i] = _labels[rep_index]
+        # reps.append(_labels[rep_index])
         is_excluded[rep_index] = False
 
+    # sanity check:
+    # number excluded is the nreads - ncomp (1 rep for each component)
+    # if sum(is_excluded) != n - ncomp:
+    #     raise StellarscopeError("incorrect number excluded")
+    
     return comps.tolist(), is_excluded
 
 
@@ -1621,7 +1665,7 @@ class Stellarscope(Telescope):
 
         return _mappings, alninfo
 
-    def dedup_umi(self, output_report=True):
+    def dedup_umi(self, output_report=True, summary=True):
         """
 
         Returns
@@ -1642,106 +1686,95 @@ class Stellarscope(Telescope):
             key = (self.read_bcode_map[qname], self.read_umi_map[qname])
             _ = bcumi_read[key].setdefault(qname, None)
 
-        umiinfo['Number of barcode+UMI pairs'] = len(bcumi_read)
-        reads_per_bcumi_dist = Counter(map(len, bcumi_read.values()))
-        for i in range(1, max(reads_per_bcumi_dist.keys())+1):
-            umiinfo[f'    pairs with {i} reads'] = reads_per_bcumi_dist[i]
-
-        for k,v in umiinfo.items():
-            lg.info(f'{k}: {v}')
+        """ Summary information """
+        reads_per_umi = list(map(len, bcumi_read.values()))
+        umiinfo['rpu_hist'], umiinfo['rpu_bins'] = np.histogram(
+            reads_per_umi,
+            bins = [1, 2, 3, 4, 5, 6, 11, 21, max(reads_per_umi) + 1]
+        )
+        if summary:
+            num_umi = len(bcumi_read)
+            num_umi_1 = umiinfo["rpu_hist"][0]
+            lg.info(f'Number of BC+UMI pairs: {len(bcumi_read)}')
+            lg.info(f'    unique UMIs: {num_umi_1}')
+            lg.info(f'    duplicated UMIs: {num_umi - num_umi_1}')
+            lg.info(f'    max reads per UMI: {max(reads_per_umi)}')
+            for b_i, v in enumerate(umiinfo['rpu_hist']):
+                bs, be = umiinfo['rpu_bins'][b_i], umiinfo['rpu_bins'][b_i+1]
+                if be == umiinfo['rpu_bins'][-1]:
+                    _bin = f'>{bs-1}'
+                elif be - bs == 1:
+                    _bin = f'{bs}'
+                else:
+                    _bin = f'{bs}-{be - 1}'
+                lg.info(f'        UMIs with {_bin} reads: {v}')
 
         ''' Loop over all bc+umi pairs'''
+        umiinfo['ncomps_umi'] = Counter()
+        umiinfo['nexclude'] = 0
         for (bc, umi), qnames in bcumi_read.items():
-            if len(qnames) == 1: continue
+            ''' Unique barcode+umi '''
+            if len(qnames) == 1:
+                continue
 
-            ''' multiple reads with same barcode+umi '''
+            ''' Duplicated barcode+umi '''
             umi_feat_scores = []
+            ''' Construct a list of 2-tuples with (read name, alignment vector)
+                where alignment vector is a dictionary mapping feature index to
+                the alignment score of the read to the feature
+            '''
             for qname in qnames.keys():
                 row_m = self.raw_scores[self.read_index[qname],]
                 vec = {ft: sc for ft, sc in zip(row_m.indices, row_m.data)}
-                assert self.feat_index[self.opts.no_feature_key] == 0
-                _ = vec.pop(0, None)
+                _ = vec.pop(0, None) # remove "no_feature", index = 0
                 umi_feat_scores.append((qname, vec))
 
+            ''' Select representative read(s) '''
             comps, is_excluded = select_umi_representatives(umi_feat_scores)
+            ''' Update set to exclude '''
+            for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
+                if ex:
+                    _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
+
+            umiinfo['ncomps_umi'][len(set(comps))] += 1
+            umiinfo['nexclude'] += sum(is_excluded)
+
             if output_report:
                 print(f'{bc}\t{umi}', file=umiFH)
                 _iter = zip(comps, is_excluded, umi_feat_scores)
                 for comp, ex, (qname, vec) in _iter:
                     exstr = 'EX' if ex else 'REP'
-                    # We could use feature names in the score vector and make
-                    # it look nicer. But this is OK for now.
                     print(f'\t{qname}\t{comp}\t{exstr}\t{str(vec)}',
                           file=umiFH)
-
-            for ex, (qname, vec) in zip(is_excluded, umi_feat_scores):
-                if ex:
-                    _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
-                """
-                    duplicated_umis[(bc, umi)]['exclude'].append(qname)
-                else:
-                    duplicated_umis[(bc, umi)]['reps'].append(qname)
-                """
 
         if output_report:
             umiFH.close()
 
-        ''' Remove excluded reads '''
-        """ sanity check
-        for t, d in duplicated_umis.items():
-            assert len(d['exclude']) == len(
-                set(d['exclude'])), 'contains duplicates'
-            assert len(d['reps']) == len(set(d['reps'])), 'contains duplicates'
-            n0 = len(bcumi_read[t])
-            n1 = len(d['exclude']) + len(d['reps'])
-            assert n0 == n1
-        """
 
-        """
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00a-duplicated_umis'),
-                      duplicated_umis)
-        """
+        exclude_rows = [self.read_index[qname] for qname in exclude_qnames]
+        # exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
+        self.umi_dups = row_identity_matrix(exclude_rows, self.shape[0])
+        # self.corrected = (self.raw_scores - self.raw_scores.multiply(self.umi_duplicates))
+        self.corrected = self.raw_scores.multiply(bool_inv(self.umi_dups))
+        if summary:
+            lg.info(f'UMI duplicate reads excluded: {umiinfo["nexclude"]}')
+            lg.info(f'    UMIs with 1 component: {umiinfo["ncomps_umi"][1]}')
+            lg.info(f'    UMIs with 2 components: {umiinfo["ncomps_umi"][2]}')
+            lg.info(f'    UMIs with 3 components: {umiinfo["ncomps_umi"][3]}')
+            _gt3 = sum(v for k,v in umiinfo["ncomps_umi"].items() if k>3)
+            lg.info(f'    UMIs with >3 components: {_gt3}')
+            lg.info(f'Total reads excluded: {umiinfo["nexclude"]}')
 
-        exclude_rows = sorted(
-            self.read_index[qname] for qname in exclude_qnames)
+        # # Sanity check: check excluded rows are set to zero in self.corrected
+        # # and included rows are the same
+        # for r in range(self.shape[0]):
+        #     if r in exclude_rows:
+        #         assert self.corrected[r,].nnz == 0
+        #     else:
+        #         assert self.raw_scores[r,].check_equal(self.corrected[r,])
 
-        """ 
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00a-exclude_rows'), exclude_rows)
-        """
-
-        # exclude_qnames2 = set()
-        # for k,d in duplicated_umis.items():
-        #     exclude_qnames2 |= d['exclude']
-        # exclude_rows2 = sorted(self.read_index[qname] for qname in exclude_qnames2)
-        # assert all(r1==r2 for r1,r2 in zip(exclude_rows, exclude_rows2))
-
-        exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00a-exclude_mat'), exclude_mat)
-            dump_data(self.opts.outfile_path('00a-uncorrected'),
-                      self.raw_scores)
-
-        self.corrected = (
-                    self.raw_scores - self.raw_scores.multiply(exclude_mat))
-
-        """
-        if self.opts.devmode:
-            dump_data(self.opts.outfile_path('00b-corrected'), self.corrected)
-            dump_data(self.opts.outfile_path('00b-uncorrected'),
-                      self.raw_scores)
-        """
-
-        """ # sanity check
-        for r in range(self.shape[0]):
-            if r in exclude_rows:
-                assert self.corrected[r,].nnz == 0
-            else:
-                assert self.raw_scores[r,].check_equal(self.corrected[r,])
-        """
-
-        return umiinfo
+        # print(f'nexclude == len(exclude_qnames) is {umiinfo["nexclude"] == len(exclude_qnames)}')
+        return
 
     def save(self, filename: Union[str, bytes, os.PathLike]):
         """ Save current state of Stellarscope object

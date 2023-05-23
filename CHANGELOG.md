@@ -26,11 +26,16 @@ vulnerabilities.
 - **`stellarscope resume` enables resuming from checkpoint file.** Users may
   choose a different pooling mode from the initial run, or specify an alternate
   celltype file.
+- **UMI deduplication summary.** Reports number of duplicated UMIs and number 
+  of components found per UMI.
 
 ### Changed
-- Consistent output for "random" reassignment modes when using 
-  `stellarscope resume`. Seed for random number generator is stored in
-  the checkpoint object and transferred when resuming. 
+- **Consistent output for "random" reassignment modes when using 
+  `stellarscope resume`.** Seed for random number generator is stored in
+  the checkpoint object and transferred when resuming.
+- **Improved performance of UMI deduplication.** Removed asserts and sanity 
+  checks. Implemented shortcut for selecting UMI representatives - building
+  adjacency matrix is avoided if all reads share 1 or more features. 
 
 ## [1.3.3.dev2](https://github.com/nixonlab/stellarscope/releases/tag/1.3.3.dev2)
 

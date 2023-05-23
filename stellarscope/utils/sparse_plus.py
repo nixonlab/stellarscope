@@ -277,14 +277,31 @@ def row_identity_matrix(selected, nrows):
         Sparse matrix with shape = (nrows, 1)
 
     """
-    _nnz = len(selected)
-    _data = [1] * _nnz
-    _i = selected
-    _j = [0] * _nnz
+    _ridx = sorted([*{*selected}])
+    _nnz = len(_ridx)
     _M = scipy.sparse.coo_matrix(
-        (_data, (_i, _j)),
+        (np.zeros(_nnz) + 1, (_ridx, np.zeros(_nnz))),
         shape=(nrows, 1),
         dtype=np.uint8
     )
     return csr_matrix_plus(_M)
 
+def bool_inv(m):
+    """ Invert/negate boolean matrix
+
+    Parameters
+    ----------
+    m : csr_matrix_plus
+        Boolean sparse matrix represented with integers.
+        (0 is False, 1 is True)
+
+    Returns
+    -------
+    csr_matrix_plus
+        Sparse matrix where ret[i,j] == !m[i,j]
+
+    """
+    return csr_matrix_plus(
+        np.ones(m.shape) - m,
+        dtype=m.dtype
+    )
