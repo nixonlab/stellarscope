@@ -230,7 +230,7 @@ def human_format(num: int) -> str:
     return '%.1f%s' % (num, ['', 'K', 'M', 'G', 'T', 'P'][magnitude])
 
 
-def log_progress(nfrags: int, overwrite: bool = True) -> None:
+def log_progress(nfrags: int, overwrite: bool = False) -> None:
     """
 
     Parameters

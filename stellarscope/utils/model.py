@@ -1187,10 +1187,11 @@ def fit_pooling_model(
         st_model.em(use_likelihood=opts.use_likelihood)
         return st_model
 
-    def fit_individual(scoremat):
+    def fit_individual(scoremat, progress=5):
         z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
+        lg.info(f'  {len(st.bcode_ridx_map)} models to fit')
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
             _I = row_identity_matrix(_rows, scoremat.shape[0])
@@ -1203,6 +1204,8 @@ def fit_pooling_model(
             all_z += _submod.z
 
             log_likelihoods.append(_submod.lnl)
+            if progress and len(log_likelihoods) % progress == 0:
+                lg.info(f'    ...{len(log_likelihoods)} models fitted')
 
         ''' Add matrices to get full matrix 
             This is equivalent to updating/slicing since the nonzero elements
@@ -1223,10 +1226,11 @@ def fit_pooling_model(
         st_model.lnl = sum(log_likelihoods)
         return st_model
 
-    def fit_celltype(scoremat):
+    def fit_celltype(scoremat, progress=1):
         z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
+        lg.info(f'  {len(st.celltypes)} models to fit')
         for _ctype in st.celltypes:
             _rows = []
 
@@ -1249,6 +1253,8 @@ def fit_pooling_model(
             all_z += _submod.z
 
             log_likelihoods.append(_submod.lnl)
+            if progress and len(log_likelihoods) % progress == 0:
+                lg.info(f'    Model fit for "{_ctype}"; lnL={_submod.lnl}')
 
         ''' Add matrices to get full matrix 
             This is equivalent to updating/slicing since the nonzero elements
@@ -1288,6 +1294,7 @@ def fit_pooling_model(
         msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
         raise ValueError(msg)
 
+    lg.info(f'  Total lnL: {st_model.lnl}')
     return st_model
 
 
