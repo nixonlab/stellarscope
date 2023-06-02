@@ -1198,7 +1198,7 @@ def fit_pooling_model(
             _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
 
             ''' Run EM '''
-            lg.debug(f"Running EM for {_bcode}")
+            lg.info(f"Running EM for {_bcode}")
             _submod.em(use_likelihood=opts.use_likelihood)
             z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
             all_z += _submod.z
