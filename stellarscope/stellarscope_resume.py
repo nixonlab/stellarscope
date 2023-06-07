@@ -20,7 +20,7 @@ from .utils.helpers import format_minutes as fmtmins
 
 from .utils.model import Stellarscope, StellarscopeError
 from .utils.model import TelescopeLikelihood
-from .utils.model import fit_pooling_model
+
 from .stellarscope_assign import StellarscopeAssignOptions
 
 __author__ = 'Matthew L. Bendall'
@@ -156,7 +156,7 @@ def run(args):
     ''' Fit pooling model '''
     lg.info('Fitting model...')
     stime = time()
-    st_model, mod_sums = fit_pooling_model(st_obj, opts)
+    st_model, mod_sums = st_obj.fit_pooling_model()
     lg.info(f'  Total lnL: {st_model.lnl}')
     lg.info(f'  Total lnL (summaries): {sum([t[0] for t in mod_sums])}')
     lg.info(f'  number of models estimated: {len(mod_sums)}')

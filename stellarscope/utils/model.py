@@ -1180,7 +1180,7 @@ def _em_wrapper(tl: TelescopeLikelihood, use_lnl: bool):
     tl.em(use_likelihood=use_lnl)
     return tl.z, tl.summary()
 
-def fit_pooling_model(
+def _fit_pooling_model(
         st: Stellarscope,
         opts: 'StellarscopeAssignOptions',
         processes: int = 1,
@@ -1929,6 +1929,14 @@ class Stellarscope(Telescope):
 
         # print(f'nexclude == len(exclude_qnames) is {umiinfo["nexclude"] == len(exclude_qnames)}')
         return
+
+    def fit_pooling_model(self, ):
+        return _fit_pooling_model(
+            self,
+            self.opts,
+            processes=self.opts.nproc,
+            progress=100
+        )
 
     def save(self, filename: Union[str, bytes, os.PathLike]):
         """ Save current state of Stellarscope object
