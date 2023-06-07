@@ -156,8 +156,12 @@ def run(args):
     ''' Fit pooling model '''
     lg.info('Fitting model...')
     stime = time()
-    st_model = fit_pooling_model(st_obj, opts)
-    lg.info(f"Fitting completed in {fmtmins(time() - stime)}")
+    st_model, mod_sums = fit_pooling_model(st_obj, opts)
+    lg.info(f'  Total lnL: {st_model.lnl}')
+    lg.info(f'  Total lnL (summaries): {sum([t[0] for t in mod_sums])}')
+    lg.info(f'  number of models estimated: {len(mod_sums)}')
+    # lg.info(f'  BIC: {st_model.BIC()}')
+    lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     ''' Generate report '''
     lg.info("Generating Report...")

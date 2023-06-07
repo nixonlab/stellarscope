@@ -45,6 +45,11 @@
         type: int
         help: Number of cores to use. (Multiple cores not supported yet).
         hide: True
+    - nproc:
+        default: 1
+        type: int
+        help: Number of processes to use. Parallelization is used in model 
+              fitting (EM) for the "individual" and "celltype" pooling modes.
     - tempdir:
         help: |
             Path to temporary directory. Temporary files will be stored
@@ -219,7 +224,7 @@
               single end reads (F - forward strand).
     - ignore_umi:
         action: store_true
-        help: Do not perform UMI deduplication. Not recommended.
+        help: Do not perform UMI deduplication.
 - Model Parameters:
     - pi_prior:
         type: int

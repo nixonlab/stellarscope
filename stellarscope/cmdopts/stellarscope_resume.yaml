@@ -12,7 +12,11 @@
             Path to tab-delimited text file with celltype assignments, with
             cell barcodes in first column and celltype string in the second.
             Required if pooling_mode is 'celltype', ignored otherwise.
-
+    - nproc:
+        default: 1
+        type: int
+        help: Number of processes to use. Parallelization is used in model 
+              fitting (EM) for the "individual" and "celltype" pooling modes.
 - Reporting Options:
     - outdir:
         help: Output directory. Default is path to checkpoint file.
@@ -134,7 +138,8 @@
             unique; range: (0.5, 1.0].
     - ignore_umi:
         action: store_true
-        help: Do not perform UMI deduplication. Not recommended.
+        help: Do not perform UMI deduplication. If corrected matrix is present
+              from previous run, do not use it.
 - Model Parameters:
     - pi_prior:
         type: int

@@ -12,8 +12,8 @@ import sys
 import logging as lg
 from collections import OrderedDict, defaultdict, Counter
 # import gc
-from multiprocessing import Pool
-import functools
+import multiprocessing
+from functools import partial
 import itertools
 import warnings
 from typing import Union
@@ -207,12 +207,12 @@ class Telescope(object):
         _minAS, _maxAS = BIG_INT, -BIG_INT
         alninfo = Counter()
         mfiles = []
-        pool = Pool(processes=self.opts.ncpu)
-        _loadfunc = functools.partial(alignment.fetch_region,
-                                      self.opts.samfile,
-                                      annotation,
-                                      opt_d,
-                                      )
+        pool = multiprocessing.Pool(processes=self.opts.ncpu)
+        _loadfunc = partial(alignment.fetch_region,
+            self.opts.samfile,
+            annotation,
+            opt_d,
+        )
         result = pool.map_async(_loadfunc, regions)
         for mfile, scorerange, _pxu in result.get():
             alninfo['unmap_x'] += _pxu
@@ -821,13 +821,16 @@ class TelescopeLikelihood(object):
 
         try:
             _inner = csr_matrix(_amb + _uni)
-            _log_inner = _inner.log1p()
+            #_log_inner = _inner.log1p()
+            _log_inner = csr_matrix(_inner)
+            _log_inner.data = np.log(_inner.data)
             if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (_inner)')
             _inner = csr_matrix(_amb + _uni, dtype=np.float128)
-            _log_inner = _inner.log1p()
-
+            #_log_inner = _inner.log1p()
+            _log_inner = csr_matrix(_inner)
+            _log_inner.data = np.log(_inner.data)
         try:
             ret = z.multiply(_log_inner).sum()
             if USE_EXTENDED: raise FloatingPointError
@@ -845,10 +848,22 @@ class TelescopeLikelihood(object):
 
         _pitheta = csr_matrix(pi).multiply(np.power(theta, Y))
         _inner = _pitheta.multiply(Q)
-        _log_inner = _inner.log1p()
+        # _log_inner = _inner.log1p()
+        _log_inner = csr_matrix(_inner)
+        _log_inner.data = np.log(_inner.data)
         ret = z.multiply(_log_inner).sum()
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl_alt()')
         return ret
+
+    def summary(self):
+        if self.lnl == float('inf'):
+            _lnl = self.calculate_lnl(self.z, self.pi, self.theta)
+        else:
+            _lnl = self.lnl
+        nzrow, nzcol = self.raw_scores.nonzero()
+        _k = len(np.unique(nzcol)) * 2 # two parameters estimated for each feature
+        _n = len(np.unique(nzrow))
+        return _lnl, _k, _n
 
     def em(self, use_likelihood=False, loglev=lg.DEBUG):
         inum = 0  # Iteration number
@@ -994,7 +1009,6 @@ class TelescopeLikelihood(object):
 
         raise StellarscopeError('Reassignment method did not return')
         return
-
 
 class Assigner:
     def __init__(self, annotation: annotation.BaseAnnotation,
@@ -1162,9 +1176,16 @@ def select_umi_representatives(
     return comps.tolist(), is_excluded
 
 
+def _em_wrapper(tl: TelescopeLikelihood, use_lnl: bool):
+    tl.em(use_likelihood=use_lnl)
+    return tl.z, tl.summary()
+
 def fit_pooling_model(
         st: Stellarscope,
-        opts: 'StellarscopeAssignOptions'
+        opts: 'StellarscopeAssignOptions',
+        processes: int = 1,
+        progress: int = 100
+
 ) -> TelescopeLikelihood:
     """ Fit model using different pooling modes
 
@@ -1174,6 +1195,10 @@ def fit_pooling_model(
         Stellarscope object
     opts : StellarscopeAssignOptions
         Stellarscope run options
+    processes : int
+        Number of processes to run
+    progress : int
+        Frequency of progress output. Set to 0 to disable.
 
     Returns
     -------
@@ -1182,13 +1207,14 @@ def fit_pooling_model(
         matrix (`TelescopeLikelihood.z`).
     """
 
-    def fit_pseudobulk(scoremat):
+    def old_fit_pseudobulk(scoremat):
         st_model = TelescopeLikelihood(scoremat, opts)
         st_model.em(use_likelihood=opts.use_likelihood)
         return st_model
 
-    def fit_individual(scoremat, progress=5):
-        z_mats = []  # can remove?
+    def old_fit_individual(scoremat, progress=5):
+        sanitymode = True
+        if sanitymode: z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
         lg.info(f'  {len(st.bcode_ridx_map)} models to fit')
@@ -1198,9 +1224,10 @@ def fit_pooling_model(
             _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
 
             ''' Run EM '''
-            lg.info(f"Running EM for {_bcode}")
+            if progress and len(log_likelihoods) % progress == 0:
+                lg.info(f"Running EM for {_bcode}")
             _submod.em(use_likelihood=opts.use_likelihood)
-            z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
+            if sanitymode: z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
             all_z += _submod.z
 
             log_likelihoods.append(_submod.lnl)
@@ -1212,11 +1239,12 @@ def fit_pooling_model(
             do not overlap for all pairs of subsets, i.e. each read is a member
             of exactly one cell 
         '''
-        all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
-        for _z in z_mats:
-            all_z_fromlist += _z
+        if sanitymode:
+            all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
+            for _z in z_mats:
+                all_z_fromlist += _z
 
-        assert all_z_fromlist.check_equal(all_z)
+            assert all_z_fromlist.check_equal(all_z)
 
         if opts.devmode:
             dump_data(opts.outfile_path('all_merged_z'), all_z)
@@ -1226,7 +1254,39 @@ def fit_pooling_model(
         st_model.lnl = sum(log_likelihoods)
         return st_model
 
-    def fit_celltype(scoremat, progress=1):
+    def new_fit_individual(scoremat, progress=100):
+        ret_model = TelescopeLikelihood(scoremat, opts)
+        ret_model.z = csr_matrix(scoremat.shape, dtype=np.float64)
+        ret_model.lnl = 0.0
+        # log_likelihoods = []
+        # use_likelihood = opts.use_likelihood
+        def _tl_generator():
+            for _bcode, _rowset in st.bcode_ridx_map.items():
+                _rows = sorted(_rowset)
+                _I = row_identity_matrix(_rows, scoremat.shape[0])
+                _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
+                yield _submod
+
+        if processes == 1:
+            for i, tl in enumerate(_tl_generator()):
+                _z, _lnl = _em_wrapper(tl, opts.use_likelihood)
+                ret_model.z += _z
+                # log_likelihoods.append(_lnl)
+                ret_model.lnl += _lnl
+        else:
+            with multiprocessing.Pool(processes) as pool:
+                lg.info(f'    (Using pool of {processes} workers)')
+                _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
+                imap_it = pool.imap(_func, _tl_generator(), 10)
+                for i, (_z, _lnl) in enumerate(imap_it):
+                    if progress and (i+1) % progress == 0:
+                        lg.info(f'        ...{i+1} models fitted')
+                    ret_model.z += _z
+                    ret_model.lnl += _lnl
+
+        return ret_model
+
+    def old_fit_celltype(scoremat, progress=1):
         z_mats = []  # can remove?
         all_z = csr_matrix(scoremat.shape, dtype=np.float64)
         log_likelihoods = []
@@ -1275,27 +1335,114 @@ def fit_pooling_model(
         st_model.lnl = sum(log_likelihoods)
         return st_model
 
-    ''' fit_pooling_model '''
+    def parallel_fit_celltype(scoremat, progress=1):
+        def _tl_generator_celltype():
+            for _ctype in st.celltypes:
+                ''' Get read indexes for each barcode in cell '''
+                _rows = []
+                for _bcode in st.ctype_bcode_map[_ctype]:
+                    if _bcode in st.bcode_ridx_map:
+                        _rows.extend(st.bcode_ridx_map[_bcode])
+
+                ''' No reads for this celltype '''
+                if not _rows: continue
+
+                _I = row_identity_matrix(_rows, scoremat.shape[0])
+                yield TelescopeLikelihood(scoremat.multiply(_I), opts)
+
+        return fit_celltype(scoremat, progress)
+
+    def _tl_generator_celltype():
+        for _ctype in st.celltypes:
+            ''' Get read indexes for each barcode in cell '''
+            _rows = []
+            for _bcode in st.ctype_bcode_map[_ctype]:
+                if _bcode in st.bcode_ridx_map:
+                    _rows.extend(st.bcode_ridx_map[_bcode])
+
+            ''' No reads for this celltype '''
+            if not _rows: continue
+
+            _I = row_identity_matrix(_rows, _scoremat.shape[0])
+            yield TelescopeLikelihood(_scoremat.multiply(_I), opts)
+
+    def _tl_generator_individual():
+        for _bcode, _rowset in st.bcode_ridx_map.items():
+            _rows = sorted(_rowset)
+            _I = row_identity_matrix(_rows, _scoremat.shape[0])
+            yield TelescopeLikelihood(_scoremat.multiply(_I), opts)
+
+    """ Fit pooling model """
+    """ Select UMI corrected or raw score matrix """
     if opts.ignore_umi:
-        assert st.corrected is None, 'ignore_umi but st_obj.corrected is not None'
+        if st.corrected is not None:
+            lg.warning('Ignoring UMI corrected matrix')
         _scoremat = st.raw_scores
     else:
-        assert st.corrected.shape == st.shape, 'umi correction but st_obj.corrected is not None'
+        if st.corrected is None:
+            raise StellarscopeError("UMI corrected matrix not found")
+        if st.corrected.shape != st.shape:
+            raise StellarscopeError("UMI corrected matrix shape mismatch")
         _scoremat = st.corrected
 
-    if opts.pooling_mode == 'individual':
-        st_model = fit_individual(_scoremat)
-    elif opts.pooling_mode == 'pseudobulk':
-        st_model = fit_pseudobulk(_scoremat)
-    elif opts.pooling_mode == 'celltype':
-        st_model = fit_celltype(_scoremat)
-    else:
-        msg = f'Invalid pooling mode "{opts.pooling_mode}". '
-        msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
-        raise ValueError(msg)
+    ret_model = TelescopeLikelihood(_scoremat, opts)
+    ret_summary = []
 
-    lg.info(f'  Total lnL: {st_model.lnl}')
-    return st_model
+    if opts.pooling_mode == 'pseudobulk':
+        lg.info(f'    1 model to fit')
+        ret_model.em(use_likelihood=opts.use_likelihood)
+        ret_summary.append(ret_model.summary())
+        return ret_model, ret_summary
+
+    """ Initialize z for return model """
+    ret_model.z = csr_matrix(_scoremat.shape, dtype=np.float64)
+    # ret_model.lnl = 0.0
+
+    if opts.pooling_mode == 'individual':
+        lg.info(f'    {len(st.bcode_ridx_map)} models to fit')
+        tl_generator = _tl_generator_individual()
+    elif opts.pooling_mode == 'celltype':
+        lg.info(f'    {len(st.celltypes)} models to fit')
+        tl_generator = _tl_generator_celltype()
+
+    processes = opts.nproc
+    if processes == 1:
+        for i, tl in enumerate(tl_generator):
+            _z, (_lnl, _k, _n) = _em_wrapper(tl, opts.use_likelihood)
+            ret_model.z += _z
+            ret_summary.append(tl.summary())
+    else:
+        with multiprocessing.Pool(processes) as pool:
+            lg.info(f'    (Using pool of {processes} workers)')
+            _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
+            imap_it = pool.imap(_func, tl_generator, 10)
+            for i, (_z, _summary) in enumerate(imap_it):
+                if progress and (i + 1) % progress == 0:
+                    lg.info(f'        ...{i + 1} models fitted')
+                ret_model.z += _z
+                ret_summary.append(_summary)
+
+    ret_model.lnl = sum(_lnl for _lnl,_k,_n in ret_summary)
+    return ret_model, ret_summary
+
+
+
+    # if opts.pooling_mode == 'individual':
+    #     st_model = fit_individual(_scoremat)
+    # elif opts.pooling_mode == 'pseudobulk':
+    #     st_model = fit_pseudobulk(_scoremat)
+    # elif opts.pooling_mode == 'celltype':
+    #     if processes == 1:
+    #         st_model = fit_celltype(_scoremat)
+    #     else:
+    #         st_model = parallel_fit_celltype(_scoremat)
+    # else:
+    #     msg = f'Invalid pooling mode "{opts.pooling_mode}". '
+    #     msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
+    #     raise ValueError(msg)
+    #
+    # lg.info(f'  Total lnL: {st_model.lnl}')
+    # return st_model
 
 
 class StellarscopeError(Exception):

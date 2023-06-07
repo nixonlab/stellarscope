@@ -27,6 +27,7 @@ from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
 from .utils.model import Stellarscope, StellarscopeError
 from .utils import model
+from .utils.model import fit_pooling_model
 from .utils.annotation import get_annotation_class
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
@@ -316,9 +317,11 @@ def run(args):
         ts_model = fit_telescope_model(st_obj, opts)
         lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
-    lg.info('Fitting model (fit_pooling_model)')
+    lg.info('Fitting model...')
     stime = time()
-    st_model = model.fit_pooling_model(st_obj, opts)
+    st_model = fit_pooling_model(st_obj, opts)
+    lg.info(f'  Total lnL: {st_model.lnl}')
+    lg.info(f'  number of models estimated: {len(st_model.lnl_list)}')
     lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     if opts.devmode:
