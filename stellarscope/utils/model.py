@@ -2,7 +2,7 @@
 from __future__ import print_function, annotations
 from __future__ import absolute_import
 
-from typing import Optional, List, Any
+from typing import DefaultDict, Optional, Any, Union
 
 from past.utils import old_div
 
@@ -16,8 +16,8 @@ import multiprocessing
 from functools import partial
 import itertools
 import warnings
-from typing import Union
 import pickle
+from time import perf_counter
 
 import numpy as np
 import scipy
@@ -25,12 +25,14 @@ import pandas as pd
 import pysam
 from scipy.sparse.csgraph import connected_components
 
+from stellarscope import StellarscopeError, AlignmentValidationError
 from . import OptionsBase
 from . import log_progress
 from .helpers import dump_data
-from .sparse_plus import row_identity_matrix
-from .sparse_plus import bool_inv
+
 from .sparse_plus import csr_matrix_plus as csr_matrix
+from .sparse_plus import row_identity_matrix, bool_inv
+from .statistics import FitInfo, PoolInfo, ReassignInfo
 
 from .colors import c2str, D2PAL, GPAL
 from .helpers import str2int, region_iter, phred
@@ -647,7 +649,8 @@ class TelescopeLikelihood(object):
         self.max_iter = opts.max_iter
 
         """ Raw scores """
-        self.raw_scores = score_matrix
+        self.raw_scores = csr_matrix(score_matrix)
+        self.raw_scores.eliminate_zeros()
         self.max_score = self.raw_scores.max()
 
         """ N fragments x K transcripts """
@@ -664,7 +667,6 @@ class TelescopeLikelihood(object):
         """
         self.scale_factor = 100.
         self.Q = self.raw_scores.scale().multiply(self.scale_factor).expm1()
-
 
         """
         Indicator variables for ambiguous (Y_amb), unique (Y_uni), and
@@ -731,8 +733,17 @@ class TelescopeLikelihood(object):
         self._pi_denom = self._total_wt + self._pi_prior_wt * self.K
 
         lg.debug('EXIT: TelescopeLikelihood.__init__()')
+
+        """ Information about the fit """
+        self.fitinfo = FitInfo(self)
         return
 
+    def _estep_xp(self, pi, theta):
+        lg.info('Using extended precision')
+        return self.estep(
+            pi.astype(np.float128),
+            theta.astype(np.float128)
+        )
     def estep(self, pi, theta):
         """ Calculate the expected values of z
                 E(z[i,j]) = ( pi[j] * theta[j]**Y[i] * Q[i,j] ) /
@@ -741,18 +752,10 @@ class TelescopeLikelihood(object):
         try:
             _amb = self._ambQ.multiply(pi).multiply(theta)
             _uni = self._uniQ.multiply(pi)
-            if USE_EXTENDED: raise FloatingPointError
+            return (_amb + _uni).norm(1)
         except FloatingPointError:
-            lg.debug('using extended precision')
-            pi = pi.astype(np.float128)
-            theta = theta.astype(np.float128)
-            _amb = self._ambQ.multiply(pi).multiply(theta)
-            _uni = self._uniQ.multiply(pi)
+            return self._estep_xp(pi, theta)
 
-        _n = _amb + _uni
-
-        lg.debug('EXIT: TelescopeLikelihood.estep()')
-        return _n.norm(1)
 
     def mstep(self, z):
         """ Calculate the maximum a posteriori (MAP) estimates for pi and theta
@@ -855,60 +858,55 @@ class TelescopeLikelihood(object):
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl_alt()')
         return ret
 
-    def summary(self):
-        if self.lnl == float('inf'):
-            _lnl = self.calculate_lnl(self.z, self.pi, self.theta)
-        else:
-            _lnl = self.lnl
-        nzrow, nzcol = self.raw_scores.nonzero()
-        _k = len(np.unique(nzcol)) * 2 # two parameters estimated for each feature
-        _n = len(np.unique(nzrow))
-        return _lnl, _k, _n
 
-    def em(self, use_likelihood=False, loglev=lg.DEBUG):
+    def em(self, loglev=lg.DEBUG):
         inum = 0  # Iteration number
-        converged = False  # Has convergence been reached?
-        reached_max = False  # Has max number of iterations been reached?
+        _useL = self.opts.use_likelihood
 
         msgD = 'Iteration {:d}, diff={:.5g}'
         msgL = 'Iteration {:d}, lnl= {:.5e}, diff={:.5g}'
-        from time import perf_counter
-        from .helpers import format_minutes as fmtmins
-        while not (converged or reached_max):
-            xtime = perf_counter()
+        while not (self.fitinfo.converged or self.fitinfo.reached_max):
+            is_time = perf_counter()
             _z = self.estep(self.pi, self.theta)
             _pi, _theta = self.mstep(_z)
             inum += 1
             if inum == 1:
-                self.pi_init = _pi
-                self.theta_init = _theta
+                self.pi_init, self.theta_init = _pi, _theta
 
             ''' Calculate absolute difference between estimates '''
             diff_est = abs(_pi - self.pi).sum()
 
-            if use_likelihood:
+            if _useL:
                 ''' Calculate likelihood '''
                 _lnl = self.calculate_lnl(_z, _pi, _theta)
                 diff_lnl = abs(_lnl - self.lnl)
                 lg.log(loglev, msgL.format(inum, _lnl, diff_est))
-                converged = diff_lnl < self.epsilon
+                self.fitinfo.converged = diff_lnl < self.epsilon
                 self.lnl = _lnl
             else:
                 lg.log(loglev, msgD.format(inum, diff_est))
-                converged = diff_est < self.epsilon
+                self.fitinfo.converged = diff_est < self.epsilon
 
-            reached_max = inum >= self.max_iter
+            itime = perf_counter() - is_time
+            lg.log(loglev, "time: {}".format(itime))
+            self.fitinfo.reached_max = inum >= self.max_iter
             self.z = _z
             self.pi, self.theta = _pi, _theta
-            lg.log(loglev, "time: {}".format(perf_counter() - xtime))
 
-        _con = 'converged' if converged else 'terminated'
-        if not use_likelihood:
+            self.fitinfo.iterations.append((inum,itime,diff_est))
+
+        if self.fitinfo.converged:
+            lg.log(loglev, f'EM converged after {inum:d} iterations.')
+        elif self.fitinfo.reached_max:
+            lg.log(loglev, f'EM terminated after {inum:d} iterations.')
+        else:
+            StellarscopeError('Not converged or terminated.')
+
+        if not _useL:
             self.lnl = self.calculate_lnl(self.z, self.pi, self.theta)
-            # self.lnl_alt = self.calculate_lnl_alt(self.z, self.pi, self.theta)
-
-        lg.log(loglev, f'EM {_con} after {inum:d} iterations.')
+        self.fitinfo.final_lnl = self.lnl
         lg.log(loglev, f'Final log-likelihood: {self.lnl:f}.')
+
         return
 
     def reassign(self,
@@ -964,48 +962,114 @@ class TelescopeLikelihood(object):
             msg = f'Argument "method" should be one of {self.REASSIGN_MODES}'
             raise ValueError(msg)
 
+        rinfo = ReassignInfo(mode)
+
         if mode == 'best_exclude':
             ''' Identify best PP(s), then exclude rows with >1 best '''
-            isbest = self.z.binmax(1)
-            return isbest.multiply(isbest.sum(1) == 1)
+            bestmat = self.z.binmax(1)
+            nbest = bestmat.sum(1)
+            rinfo.assigned = sum(nbest.A1 == 1)
+            rinfo.ambiguous = sum(nbest.A1 > 1)
+            rinfo.unaligned = sum(nbest.A1 == 0)
+            # lg.info(f'  best_exclude: reads with no best alignments {sum(nbest.A1 == 0)}')
+            # lg.info(f'  best_exclude: reads with 1 best alignment {sum(nbest.A1 == 1)}')
+            # lg.info(f'  best_exclude: reads with >1 best alignments {sum(nbest.A1 > 1)}')
+            rinfo.log()
+            return bestmat.multiply(nbest == 1)
         elif mode == 'best_conf':
             ''' Zero out all values less than threshold. Since each row must 
                 sum to 1, if threshold > 0.5 then each row will have at most 1
                 nonzero element.
             '''
-            assert thresh > 0.5
-            v = csr_matrix(self.z > thresh, dtype=np.uint8)
-            # old way
-            v_old = self.z.apply_func(lambda x: x if x > thresh else 0)
-            v_old = v_old.ceil().astype(np.uint8)
-            assert v.check_equal(v_old)
-            assert np.all(v.sum(1) <= 1)
-            assert np.all(v_old.sum(1) <= 1)
-            return v
+            if thresh <= 0.5:
+                msg = f"Confidence threshold ({thresh}) must be > 0.5"
+                raise StellarscopeError(msg)
+
+            confmat = csr_matrix(self.z > thresh, dtype=np.uint8)
+
+            rowmax = self.z.max(1)
+            rinfo.assigned = sum(rowmax.data > thresh)
+            rinfo.ambiguous = sum(rowmax.data <= thresh)
+            rinfo.unaligned = rowmax.shape[0] - rowmax.nnz
+
+
+            # assert np.all(confmat.sum(1) <= 1)
+            # assert confmat.nnz == rinfo.assigned
+            # assert np.all(v_old.sum(1) <= 1)
+            # lg.info(f'  best_conf: reads with zero confidence {zero_conf}')
+            # lg.info(f'  best_conf: reads with low confidence alignments {low_conf}')
+            # lg.info(f'  best_conf: reads with high confidence alignments {high_conf}')
+            return confmat
         elif mode == 'best_random':
             ''' Identify best PP(s), then randomly choose one per row '''
-            isbest = self.z.binmax(1)
-            return isbest.choose_random(1, self.opts.rng)
+            bestmat = self.z.binmax(1)
+            nbest = bestmat.sum(1)
+
+            rinfo.assigned = sum(nbest.A1 == 1)
+            rinfo.ambiguous = sum(nbest.A1 > 1)
+            rinfo.unaligned = sum(nbest.A1 == 0)
+
+            rinfo.ambigous_dist = Counter(nbest.A1)
+            # lg.info(f'  best_random: reads with no best alignments {sum(nbest.A1 == 0)}')
+            # lg.info(f'  best_random: reads with 1 best alignment {sum(nbest.A1 == 1)}')
+            # lg.info(f'  best_random: reads with >1 best alignments, randomly choosing among best {sum(nbest.A1 > 1)}')
+            # for nb in range(2,max(nbest_dist.keys())):
+            #     lg.info(
+            #         f'    best_random: reads with {nb} best alignments {nbest_dist[nb]}')
+            return bestmat.choose_random(1, self.opts.rng)
         elif mode == 'best_average':
             ''' Identify best PP(s), then divide by row sum '''
-            isbest = self.z.binmax(1)
-            return isbest.norm(1)
+            bestmat = self.z.binmax(1)
+            nbest = bestmat.sum(1)
+
+            rinfo.assigned = sum(nbest.A1 == 1)
+            rinfo.ambiguous = sum(nbest.A1 > 1)
+            rinfo.unaligned = sum(nbest.A1 == 0)
+
+            rinfo.ambigous_dist = Counter(nbest.A1)
+            # lg.info(f'  best_average: reads with no best alignments {sum(nbest.A1 == 0)}')
+            # lg.info(f'  best_average: reads with 1 best alignment {sum(nbest.A1 == 1)}')
+            # lg.info(f'  best_average: reads with >1 best alignments, randomly choosing among best {sum(nbest.A1 > 1)}')
+            # for nb in range(2,max(nbest_dist.keys())):
+            #     lg.info(
+            #         f'    best_average: reads with {nb} best alignments {nbest_dist[nb]}')
+            return bestmat.norm(1)
         elif mode == 'initial_unique':
             ''' Remove ambiguous rows and set nonzero values to 1 '''
-            assignments = csr_matrix(self.Q.multiply(self.Y_uni) > 0,
-                                     dtype=np.uint8)
-            assignments_old = self.Q.norm(1).multiply(self.Y_uni).ceil().astype(np.uint8)
-            assert assignments.check_equal(assignments_old)
-            return assignments
+            unimap = (self.Q.multiply(self.Y_uni) > 0).astype(np.uint8)
+
+            rinfo.assigned = unimap.nnz
+            rinfo.ambiguous = self.Y_amb.nnz
+            rinfo.unaligned = self.Y_0.nnz
+            # assignments_old = self.Q.norm(1).multiply(self.Y_uni).ceil().astype(np.uint8)
+            # assert assignments.check_equal(assignments_old)
+            # lg.info(
+            #     f'  initial_unique: uniquely mapped reads {assignments.nnz}')
+            return unimap
         elif mode == 'initial_random':
             ''' Identify best scores in initial matrix then randomly choose one
                 per row
             '''
-            isbest = self.raw_scores.binmax(1)
-            return isbest.choose_random(1, self.opts.rng)
+            bestraw = self.raw_scores.binmax(1)
+            nbest_raw = bestraw.sum(1)
+
+            rinfo.assigned = sum(nbest_raw.A1 == 1)
+            rinfo.ambiguous = sum(nbest_raw.A1 > 1)
+            rinfo.unaligned = sum(nbest_raw.A1 == 0)
+
+            rinfo.ambigous_dist = Counter(nbest_raw.A1)
+            return bestraw.choose_random(1, self.opts.rng)
         elif mode == 'total_hits':
             ''' Return all nonzero elements in initial matrix '''
-            return csr_matrix(self.raw_scores > 0, dtype=np.uint8)
+            # matrix where mapped equals 1, otherwise 0
+            mapped = csr_matrix(self.raw_scores > 0, dtype=np.uint8)
+            mapped_rowsum = mapped.sum(1)
+
+            rinfo.assigned = mapped.sum()
+            rinfo.ambiguous = sum(mapped_rowsum.A1 > 1)
+            rinfo.unaligned = sum(mapped_rowsum.A1 == 0)
+
+            return mapped
 
         raise StellarscopeError('Reassignment method did not return')
         return
@@ -1176,9 +1240,9 @@ def select_umi_representatives(
     return comps.tolist(), is_excluded
 
 
-def _em_wrapper(tl: TelescopeLikelihood, use_lnl: bool):
-    tl.em(use_likelihood=use_lnl)
-    return tl.z, tl.summary()
+def _em_wrapper(tl: TelescopeLikelihood):
+    tl.em()
+    return tl.z, tl.fitinfo
 
 def _fit_pooling_model(
         st: Stellarscope,
@@ -1206,153 +1270,15 @@ def _fit_pooling_model(
         TelescopeLikelihood object containing the fitted posterior probability
         matrix (`TelescopeLikelihood.z`).
     """
-
-    def old_fit_pseudobulk(scoremat):
-        st_model = TelescopeLikelihood(scoremat, opts)
-        st_model.em(use_likelihood=opts.use_likelihood)
-        return st_model
-
-    def old_fit_individual(scoremat, progress=5):
-        sanitymode = True
-        if sanitymode: z_mats = []  # can remove?
-        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
-        log_likelihoods = []
-        lg.info(f'  {len(st.bcode_ridx_map)} models to fit')
-        for _bcode, _rowset in st.bcode_ridx_map.items():
-            _rows = sorted(_rowset)
-            _I = row_identity_matrix(_rows, scoremat.shape[0])
-            _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
-
-            ''' Run EM '''
-            if progress and len(log_likelihoods) % progress == 0:
-                lg.info(f"Running EM for {_bcode}")
-            _submod.em(use_likelihood=opts.use_likelihood)
-            if sanitymode: z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
-            all_z += _submod.z
-
-            log_likelihoods.append(_submod.lnl)
-            if progress and len(log_likelihoods) % progress == 0:
-                lg.info(f'    ...{len(log_likelihoods)} models fitted')
-
-        ''' Add matrices to get full matrix 
-            This is equivalent to updating/slicing since the nonzero elements
-            do not overlap for all pairs of subsets, i.e. each read is a member
-            of exactly one cell 
-        '''
-        if sanitymode:
-            all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
-            for _z in z_mats:
-                all_z_fromlist += _z
-
-            assert all_z_fromlist.check_equal(all_z)
-
-        if opts.devmode:
-            dump_data(opts.outfile_path('all_merged_z'), all_z)
-
-        st_model = TelescopeLikelihood(scoremat, opts)
-        st_model.z = all_z
-        st_model.lnl = sum(log_likelihoods)
-        return st_model
-
-    def new_fit_individual(scoremat, progress=100):
-        ret_model = TelescopeLikelihood(scoremat, opts)
-        ret_model.z = csr_matrix(scoremat.shape, dtype=np.float64)
-        ret_model.lnl = 0.0
-        # log_likelihoods = []
-        # use_likelihood = opts.use_likelihood
-        def _tl_generator():
-            for _bcode, _rowset in st.bcode_ridx_map.items():
-                _rows = sorted(_rowset)
-                _I = row_identity_matrix(_rows, scoremat.shape[0])
-                _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
-                yield _submod
-
-        if processes == 1:
-            for i, tl in enumerate(_tl_generator()):
-                _z, _lnl = _em_wrapper(tl, opts.use_likelihood)
-                ret_model.z += _z
-                # log_likelihoods.append(_lnl)
-                ret_model.lnl += _lnl
-        else:
-            with multiprocessing.Pool(processes) as pool:
-                lg.info(f'    (Using pool of {processes} workers)')
-                _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
-                imap_it = pool.imap(_func, _tl_generator(), 10)
-                for i, (_z, _lnl) in enumerate(imap_it):
-                    if progress and (i+1) % progress == 0:
-                        lg.info(f'        ...{i+1} models fitted')
-                    ret_model.z += _z
-                    ret_model.lnl += _lnl
-
-        return ret_model
-
-    def old_fit_celltype(scoremat, progress=1):
-        z_mats = []  # can remove?
-        all_z = csr_matrix(scoremat.shape, dtype=np.float64)
-        log_likelihoods = []
-        lg.info(f'  {len(st.celltypes)} models to fit')
-        for _ctype in st.celltypes:
-            _rows = []
-
-            ''' Get read indexes for each barcode in cell '''
-            for _bcode in st.ctype_bcode_map[_ctype]:
-                if _bcode in st.bcode_ridx_map:
-                    _rows.extend(st.bcode_ridx_map[_bcode])
-
-            ''' No reads for this celltype '''
-            if not _rows: continue
-
-            _rows.sort()  # QUESTION: do we need this?
-            _I = row_identity_matrix(_rows, scoremat.shape[0])
-            _submod = TelescopeLikelihood(scoremat.multiply(_I), opts)
-
-            ''' Run EM '''
-            lg.debug(f"Running EM for {_ctype}")
-            _submod.em(use_likelihood=opts.use_likelihood)
-            z_mats.append(_submod.z.copy())  # QUESTION: do we need copy?
-            all_z += _submod.z
-
-            log_likelihoods.append(_submod.lnl)
-            if progress and len(log_likelihoods) % progress == 0:
-                lg.info(f'    Model fit for "{_ctype}"; lnL={_submod.lnl}')
-
-        ''' Add matrices to get full matrix 
-            This is equivalent to updating/slicing since the nonzero elements
-            do not overlap for all pairs of subsets, i.e. each read is a member
-            of exactly one cell 
-        '''
-        all_z_fromlist = csr_matrix(scoremat.shape, dtype=np.float64)
-        for _z in z_mats:
-            all_z_fromlist += _z
-
-        assert all_z_fromlist.check_equal(all_z)
-
-        if opts.devmode:
-            dump_data(opts.outfile_path('all_merged_z'), all_z)
-
-        st_model = TelescopeLikelihood(scoremat, opts)
-        st_model.z = all_z_fromlist
-        st_model.lnl = sum(log_likelihoods)
-        return st_model
-
-    def parallel_fit_celltype(scoremat, progress=1):
-        def _tl_generator_celltype():
-            for _ctype in st.celltypes:
-                ''' Get read indexes for each barcode in cell '''
-                _rows = []
-                for _bcode in st.ctype_bcode_map[_ctype]:
-                    if _bcode in st.bcode_ridx_map:
-                        _rows.extend(st.bcode_ridx_map[_bcode])
-
-                ''' No reads for this celltype '''
-                if not _rows: continue
-
-                _I = row_identity_matrix(_rows, scoremat.shape[0])
-                yield TelescopeLikelihood(scoremat.multiply(_I), opts)
-
-        return fit_celltype(scoremat, progress)
-
     def _tl_generator_celltype():
+        """ Generate score matrices subset by celltype 
+        
+        Yields
+        -------
+        TelescopeLikelihood
+            A TelescopeLikelihood object with subset score_matrix
+
+        """
         for _ctype in st.celltypes:
             ''' Get read indexes for each barcode in cell '''
             _rows = []
@@ -1363,108 +1289,93 @@ def _fit_pooling_model(
             ''' No reads for this celltype '''
             if not _rows: continue
 
-            _I = row_identity_matrix(_rows, _scoremat.shape[0])
-            yield TelescopeLikelihood(_scoremat.multiply(_I), opts)
+            _I = row_identity_matrix(_rows, _fullmat.shape[0])
+            yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
     def _tl_generator_individual():
+        """ Generate score matrices by cell barcode
+        
+        Yields
+        -------
+        TelescopeLikelihood
+            A TelescopeLikelihood object with subset score matrix
+
+        """
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
-            _I = row_identity_matrix(_rows, _scoremat.shape[0])
-            yield TelescopeLikelihood(_scoremat.multiply(_I), opts)
+            _I = row_identity_matrix(_rows, _fullmat.shape[0])
+            yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
     """ Fit pooling model """
+    poolinfo = PoolInfo()
+
     """ Select UMI corrected or raw score matrix """
     if opts.ignore_umi:
         if st.corrected is not None:
             lg.warning('Ignoring UMI corrected matrix')
-        _scoremat = st.raw_scores
+        _fullmat = st.raw_scores
     else:
         if st.corrected is None:
             raise StellarscopeError("UMI corrected matrix not found")
         if st.corrected.shape != st.shape:
             raise StellarscopeError("UMI corrected matrix shape mismatch")
-        _scoremat = st.corrected
+        _fullmat = st.corrected
 
-    ret_model = TelescopeLikelihood(_scoremat, opts)
-    ret_summary = []
+    ret_model = TelescopeLikelihood(_fullmat, opts)
 
     if opts.pooling_mode == 'pseudobulk':
         lg.info(f'    1 model to fit')
-        ret_model.em(use_likelihood=opts.use_likelihood)
-        ret_summary.append(ret_model.summary())
-        return ret_model, ret_summary
+        poolinfo.nmodels = 1
+        ret_model.em()
+        poolinfo.models_info['pseudobulk'] = ret_model.fitinfo
+        return ret_model, poolinfo
 
     """ Initialize z for return model """
-    ret_model.z = csr_matrix(_scoremat.shape, dtype=np.float64)
+    ret_model.z = csr_matrix(_fullmat.shape, dtype=np.float64)
     # ret_model.lnl = 0.0
 
     if opts.pooling_mode == 'individual':
+        poolinfo.nmodels = len(st.bcode_ridx_map)
         lg.info(f'    {len(st.bcode_ridx_map)} models to fit')
         tl_generator = _tl_generator_individual()
     elif opts.pooling_mode == 'celltype':
+        poolinfo.nmodels = len(st.celltypes)
         lg.info(f'    {len(st.celltypes)} models to fit')
         tl_generator = _tl_generator_celltype()
 
     processes = opts.nproc
     if processes == 1:
         for i, tl in enumerate(tl_generator):
-            _z, (_lnl, _k, _n) = _em_wrapper(tl, opts.use_likelihood)
+            _z, _fitinfo = _em_wrapper(tl)
             ret_model.z += _z
-            ret_summary.append(tl.summary())
+            poolinfo.models_info[i] = tl.fitinfo
     else:
         with multiprocessing.Pool(processes) as pool:
             lg.info(f'    (Using pool of {processes} workers)')
-            _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
-            imap_it = pool.imap(_func, tl_generator, 10)
-            for i, (_z, _summary) in enumerate(imap_it):
+            # _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
+            imap_it = pool.imap(_em_wrapper, tl_generator, 10)
+            for i, (_z, _fitinfo) in enumerate(imap_it):
                 if progress and (i + 1) % progress == 0:
                     lg.info(f'        ...{i + 1} models fitted')
                 ret_model.z += _z
-                ret_summary.append(_summary)
+                poolinfo.models_info[i] = _fitinfo
 
-    ret_model.lnl = sum(_lnl for _lnl,_k,_n in ret_summary)
-    return ret_model, ret_summary
-
-
-
-    # if opts.pooling_mode == 'individual':
-    #     st_model = fit_individual(_scoremat)
-    # elif opts.pooling_mode == 'pseudobulk':
-    #     st_model = fit_pseudobulk(_scoremat)
-    # elif opts.pooling_mode == 'celltype':
-    #     if processes == 1:
-    #         st_model = fit_celltype(_scoremat)
-    #     else:
-    #         st_model = parallel_fit_celltype(_scoremat)
-    # else:
-    #     msg = f'Invalid pooling mode "{opts.pooling_mode}". '
-    #     msg += 'Valid pooling modes are individual, pseudobulk, or celltype'
-    #     raise ValueError(msg)
-    #
-    # lg.info(f'  Total lnL: {st_model.lnl}')
-    # return st_model
-
-
-class StellarscopeError(Exception):
-    pass
-
-
-class AlignmentValidationError(StellarscopeError):
-    def __init__(self, msg, alns):
-        super().__init__(msg)
-        self.alns = alns
-
-    def __str__(self):
-        ret = super().__str__() + '\n'
-        for aln in self.alns:
-            ret += aln.r1.to_string() + '\n'
-            if aln.r2:
-                ret += aln.r2.to_string() + '\n'
-
-        return ret
+    ret_model.lnl = sum(_finfo.final_lnl for _finfo in poolinfo.models_info.values())
+    return ret_model, poolinfo
 
 
 class Stellarscope(Telescope):
+
+    opts: "StellarscopeAssignOptions"
+    corrected: csr_matrix | None
+    read_bcode_map: dict[str, str]
+    read_umi_map: dict[str, str]
+    bcode_ridx_map: DefaultDict[str, set[int]]
+    bcode_umi_map: DefaultDict[str, set[int]]
+    whitelist: dict[str, int]
+    bcode_ctype_map: dict[str, str]
+    ctype_bcode_map: DefaultDict[set[str]]
+    celltypes: list[str]
 
     def __init__(self, opts):
         """
@@ -1497,7 +1408,7 @@ class Stellarscope(Telescope):
         '''
         self.single_cell = True
 
-        self.corrected = None                   # UMI corrected alignment scores
+        self.corrected = None
         self.read_bcode_map = {}                # {read_id (str): barcode (str)}
         self.read_umi_map = {}                  # {read_id (str): umi (str)}
         self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
@@ -1506,48 +1417,27 @@ class Stellarscope(Telescope):
         self.whitelist = {}                     # {barcode (str): index (int)}
 
         ''' Instance variables for pooling mode = "celltype" '''
-        self.bcode_ctype_map: dict[str, str] = {}
+        self.bcode_ctype_map = {}
         self.ctype_bcode_map = defaultdict(set)
-        self.celltypes: list[str] = []
-        # NOTE: we could reduce the size of the barcode-celltype map by
-        #       indexing the celltypes.
-        # *this would not actually reduce the size because python strings
-        #  are immutable and use string interning
-
-        # NOTE: is this redundant with the barcode-celltype map?
-        self.barcode_celltypes = None  # pd.DataFrame, barcode, celltype
-
-        ''' Load whitelist '''
-        if self.opts.whitelist:
-            self.whitelist = self._load_whitelist()
-            lg.info(f'{len(self.whitelist)} barcodes found in whitelist.')
-        else:
-            lg.info('No whitelist provided.')
-
-        ''' Load celltype assignments '''
-        if opts.pooling_mode == 'celltype':
-            self.load_celltype_file()
-            lg.info(f'{len(self.celltypes)} unique celltypes found.')
-            # self.celltypes = sorted(set(self.bcode_ctype_map.values()))
-            # self.barcode_celltypes = pd.DataFrame({
-            #     'barcode': self.bcode_ctype_map.keys(),
-            #     'celltype': self.bcode_ctype_map.values()
-            # })
+        self.celltypes = []
 
         return
 
-    def _load_whitelist(self):
-        _ret = {}
+    def load_whitelist(self):
+        if self.whitelist:
+            lg.warn(f'Whitelist exists with {len(self.whitelist)} barcodes.')
+            lg.warn(f'Provided whitelist ({self.opts.whitelist}) not loaded')
+            return
         with open(self.opts.whitelist, 'r') as fh:
             _bc_gen = (l.split('\t')[0].strip() for l in fh)
             # Check first line is valid barcode and not column header
             _bc = next(_bc_gen)
             if re.match('^[ACGTacgt]+$', _bc):
-                _ = _ret.setdefault(_bc, len(_ret))
+                _ = self.whitelist.setdefault(_bc, len(self.whitelist))
             # Add the rest without checking
             for _bc in _bc_gen:
-                _ = _ret.setdefault(_bc, len(_ret))
-        return _ret
+                _ = self.whitelist.setdefault(_bc, len(self.whitelist))
+        return
 
 
     def load_celltype_file(self):
@@ -1564,9 +1454,10 @@ class Stellarscope(Telescope):
         -------
 
         """
-        lineparse = lambda l: tuple(map(str.strip, l.split('\t')[:2]))
+        #if self.bcode_ctype_map:
+        #if self.ctype_bcode_map:
         with open(self.opts.celltype_tsv, 'r') as fh:
-            _gen = (lineparse(l) for l in fh)
+            _gen = (tuple(map(str.strip, l.split('\t')[:2])) for l in fh)
             # Check first line is valid barcode and not column header
             _bc, _ct = next(_gen)
             if re.match('^[ACGTacgt]+$', _bc):
@@ -1579,10 +1470,10 @@ class Stellarscope(Telescope):
                 self.ctype_bcode_map[_ct].add(_bc)
 
         self.celltypes = sorted(set(self.bcode_ctype_map.values()))
-        self.barcode_celltypes = pd.DataFrame({
-            'barcode': self.bcode_ctype_map.keys(),
-            'celltype': self.bcode_ctype_map.values()
-        })
+        # self.barcode_celltypes = pd.DataFrame({
+        #     'barcode': self.bcode_ctype_map.keys(),
+        #     'celltype': self.bcode_ctype_map.values()
+        # })
         return
 
 
@@ -1952,22 +1843,7 @@ class Stellarscope(Telescope):
         """
         with open(filename, 'wb') as fh:
             pickle.dump(self, fh)
-            #
-            #
-            # _feat_list = sorted(self.feat_index, key=self.feat_index.get)
-            # _flen_list = [self.feature_length[f] for f in _feat_list]
-            # np.savez(filename,
-            #          _run_info=list(self.run_info.items()),
-            #          _flen_list=_flen_list,
-            #          _feat_list=_feat_list,
-            #          _read_list=sorted(self.read_index,
-            #                            key=self.read_index.get),
-            #          _shape=self.shape,
-            #          _raw_scores_data=self.raw_scores.data,
-            #          _raw_scores_indices=self.raw_scores.indices,
-            #          _raw_scores_indptr=self.raw_scores.indptr,
-            #          _raw_scores_shape=self.raw_scores.shape,
-            #          )
+
         return True
 
     @classmethod
@@ -1984,10 +1860,6 @@ class Stellarscope(Telescope):
         """
         with open(filename, 'rb') as fh:
             return pickle.load(fh)
-        # loader = np.load(filename)
-        # obj = cls.__new__(cls)
-        # ''' TODO: Copy data from loader into obj'''
-        # return obj
 
     def output_report(self, tl: 'TelescopeLikelihood'):
         """
@@ -2007,7 +1879,7 @@ class Stellarscope(Telescope):
 
             # Loading mtx in R does not support unsigned ints
             # np.int16 (max=32767) is probably enough
-            # Using np.int32 (max=2147483647), switch to 16-bit if mem errors
+            # Using np.int32 (max=2147483647), switch to 32-bit if mem errors
             mtx_dtype = np.float64 if reassign_mode == 'average' else np.int32
 
             ''' Aggregate by barcode '''

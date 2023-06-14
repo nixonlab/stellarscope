@@ -21,11 +21,12 @@ import numpy as np
 from scipy.sparse import lil_matrix, eye, vstack, coo_matrix
 from numpy.random import default_rng
 
+from stellarscope import StellarscopeError
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
 from .utils.helpers import dump_data
 from .utils.model import TelescopeLikelihood
-from .utils.model import Stellarscope, StellarscopeError
+from .utils.model import Stellarscope
 from .utils import model
 
 from .utils.annotation import get_annotation_class
@@ -86,7 +87,7 @@ def fit_telescope_model(
             _cell_raw_scores = csr_matrix(ts.raw_scores[_rows, :].copy())
             ts_model = TelescopeLikelihood(_cell_raw_scores, ts.opts)
             ''' Run EM '''
-            ts_model.em(use_likelihood=ts.opts.use_likelihood)
+            ts_model.em()
             ''' Add estimated posterior probs to the final z matrix '''
             z[_rows, :] = ts_model.z.tolil()
 
@@ -98,7 +99,7 @@ def fit_telescope_model(
         ''' Create likelihood '''
         ts_model = TelescopeLikelihood(ts.raw_scores, ts.opts)
         ''' Run Expectation-Maximization '''
-        ts_model.em(use_likelihood=ts.opts.use_likelihood)
+        ts_model.em()
 
     elif opts.pooling_mode == 'celltype':
         celltype_z_list = []
@@ -127,7 +128,7 @@ def fit_telescope_model(
 
                 ''' Run EM '''
                 lg.info("Running EM for {}".format(celltype))
-                ts_model.em(use_likelihood=ts.opts.use_likelihood)
+                ts_model.em()
                 ''' Add estimated posterior probs to the final z matrix '''
                 celltype_z_list.append(ts_model.z.copy())
 
@@ -224,6 +225,13 @@ def run(args):
     utils.configure_logging(opts)
     lg.info('\n{}\n'.format(opts))
 
+    total_time = time()
+
+    ''' Create Stellarscope object '''
+    st_obj = Stellarscope(opts)
+    st_obj.load_whitelist()
+
+
     """ Multiple pooling modes
     lg.info('Using pooling mode(s): %s' % ', '.join(opts.pooling_mode))
 
@@ -241,15 +249,10 @@ def run(args):
         if opts.celltype_tsv is None:
             msg = 'celltype_tsv is required for pooling mode "celltype"'
             raise StellarscopeError(msg)
+        st_obj.load_celltype_file()
     else:
         if opts.celltype_tsv:
             lg.info('celltype_tsv is ignored for selected pooling modes.')
-
-
-    total_time = time()
-
-    ''' Create Stellarscope object '''
-    st_obj = Stellarscope(opts)
 
     ''' Load annotation '''
     Annotation = get_annotation_class(opts.annotation_class)
@@ -319,10 +322,18 @@ def run(args):
 
     lg.info('Fitting model...')
     stime = time()
-    st_model = st_obj.fit_pooling_model()
-    lg.info(f'  Total lnL: {st_model.lnl}')
-    lg.info(f'  number of models estimated: {len(st_model.lnl_list)}')
+    st_model, poolinfo = st_obj.fit_pooling_model()
+    lg.info(f'  Total lnL            : {st_model.lnl}')
+    lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
+    lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
+    lg.info(f'  total obs: {poolinfo.total_obs()}')
+    lg.info(f'  total params: {poolinfo.total_params()}')
+    lg.info(f'  BIC: {poolinfo.BIC()}')
     lg.info("Fitting completed in %s" % fmtmins(time() - stime))
+
+    # lg.info(f'  Total lnL: {st_model.lnl}')
+    # lg.info(f'  number of models estimated: {len(st_model.lnl_list)}')
+    # lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     if opts.devmode:
         dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)

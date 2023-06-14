@@ -18,10 +18,11 @@ from numpy.random import default_rng
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
 
-from .utils.model import Stellarscope, StellarscopeError
-from .utils.model import TelescopeLikelihood
+from stellarscope import StellarscopeError
+from .utils.model import Stellarscope, TelescopeLikelihood
 
 from .stellarscope_assign import StellarscopeAssignOptions
+
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
@@ -156,11 +157,13 @@ def run(args):
     ''' Fit pooling model '''
     lg.info('Fitting model...')
     stime = time()
-    st_model, mod_sums = st_obj.fit_pooling_model()
-    lg.info(f'  Total lnL: {st_model.lnl}')
-    lg.info(f'  Total lnL (summaries): {sum([t[0] for t in mod_sums])}')
-    lg.info(f'  number of models estimated: {len(mod_sums)}')
-    # lg.info(f'  BIC: {st_model.BIC()}')
+    st_model, poolinfo = st_obj.fit_pooling_model()
+    lg.info(f'  Total lnL            : {st_model.lnl}')
+    lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
+    lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
+    lg.info(f'  total obs: {poolinfo.total_obs()}')
+    lg.info(f'  total params: {poolinfo.total_params()}')
+    lg.info(f'  BIC: {poolinfo.BIC()}')
     lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     ''' Generate report '''

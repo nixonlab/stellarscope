@@ -249,7 +249,7 @@ def run(args):
     ''' Run Expectation-Maximization '''
     lg.info('Running Expectation-Maximization...')
     stime = time()
-    ts_model.em(use_likelihood=opts.use_likelihood, loglev=lg.INFO)
+    ts_model.em(loglev=lg.INFO)
     lg.info("EM completed in %s" % fmtmins(time() - stime))
 
     # Output final report
