@@ -166,6 +166,12 @@ def run(args):
     lg.info(f'  BIC: {poolinfo.BIC()}')
     lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
+    ''' Reassign reads '''
+    lg.info("Reassigning reads...")
+    stime = time()
+    st_obj.reassign(st_model)
+    lg.info("Read reassignment complete in %s" % fmtmins(time() - stime))
+
     ''' Generate report '''
     lg.info("Generating Report...")
     stime = time()

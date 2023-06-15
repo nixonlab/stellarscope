@@ -357,6 +357,12 @@ def run(args):
                                  )
         lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
+    ''' Reassign reads '''
+    lg.info("Reassigning reads...")
+    stime = time()
+    st_obj.reassign(st_model)
+    lg.info("Read reassignment complete in %s" % fmtmins(time() - stime))
+
     lg.info("Generating Report...")
     stime = time()
     st_obj.output_report(st_model)

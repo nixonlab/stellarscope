@@ -138,8 +138,19 @@
             unique; range: (0.5, 1.0].
     - ignore_umi:
         action: store_true
-        help: Do not perform UMI deduplication. If corrected matrix is present
-              from previous run, do not use it.
+        help: >
+              Do not perform UMI deduplication prior to model fitting. Model 
+              fitting may be biased. Final counts will include UMI duplicates 
+              if `--umi_counts` is unset.
+    - umi_counts:
+        action: store_true
+        help: >
+              Count unique UMIs per locus instead of reads. 
+              If `--ignore_umi` is unset, performance is decreased and has no 
+              effect on the final counts, since deduplication was performed
+              prior to model fitting.
+              Otherwise, if `--ignore_umi` is set, UMI duplicates will be 
+              removed after model fitting based on the final assigned locus.
 - Model Parameters:
     - pi_prior:
         type: int

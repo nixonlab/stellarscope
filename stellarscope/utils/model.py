@@ -24,6 +24,7 @@ import scipy
 import pandas as pd
 import pysam
 from scipy.sparse.csgraph import connected_components
+from scipy.sparse import dok_matrix
 
 from stellarscope import StellarscopeError, AlignmentValidationError
 from . import OptionsBase
@@ -31,7 +32,8 @@ from . import log_progress
 from .helpers import dump_data
 
 from .sparse_plus import csr_matrix_plus as csr_matrix
-from .sparse_plus import row_identity_matrix, bool_inv
+from .sparse_plus import row_identity_matrix as rowid
+from .sparse_plus import bool_inv
 from .statistics import FitInfo, PoolInfo, ReassignInfo
 
 from .colors import c2str, D2PAL, GPAL
@@ -844,19 +846,19 @@ class TelescopeLikelihood(object):
         lg.debug('EXIT: TelescopeLikelihood.calculate_lnl()')
         return ret
 
-    def calculate_lnl_alt(self, z, pi, theta, Q=None, Y=None):
-        lg.debug('CALL: TelescopeLikelihood.calculate_lnl_alt()')
-        Q = Q if Q is not None else self.Q
-        Y = Y if Y is not None else self.Y_amb
-
-        _pitheta = csr_matrix(pi).multiply(np.power(theta, Y))
-        _inner = _pitheta.multiply(Q)
-        # _log_inner = _inner.log1p()
-        _log_inner = csr_matrix(_inner)
-        _log_inner.data = np.log(_inner.data)
-        ret = z.multiply(_log_inner).sum()
-        lg.debug('EXIT: TelescopeLikelihood.calculate_lnl_alt()')
-        return ret
+    # def calculate_lnl_alt(self, z, pi, theta, Q=None, Y=None):
+    #     lg.debug('CALL: TelescopeLikelihood.calculate_lnl_alt()')
+    #     Q = Q if Q is not None else self.Q
+    #     Y = Y if Y is not None else self.Y_amb
+    #
+    #     _pitheta = csr_matrix(pi).multiply(np.power(theta, Y))
+    #     _inner = _pitheta.multiply(Q)
+    #     # _log_inner = _inner.log1p()
+    #     _log_inner = csr_matrix(_inner)
+    #     _log_inner.data = np.log(_inner.data)
+    #     ret = z.multiply(_log_inner).sum()
+    #     lg.debug('EXIT: TelescopeLikelihood.calculate_lnl_alt()')
+    #     return ret
 
 
     def em(self, loglev=lg.DEBUG):
@@ -962,6 +964,7 @@ class TelescopeLikelihood(object):
             msg = f'Argument "method" should be one of {self.REASSIGN_MODES}'
             raise ValueError(msg)
 
+        reassign_mat = None
         rinfo = ReassignInfo(mode)
 
         if mode == 'best_exclude':
@@ -970,12 +973,11 @@ class TelescopeLikelihood(object):
             nbest = bestmat.sum(1)
             rinfo.assigned = sum(nbest.A1 == 1)
             rinfo.ambiguous = sum(nbest.A1 > 1)
-            rinfo.unaligned = sum(nbest.A1 == 0)
+            # rinfo.unaligned = sum(nbest.A1 == 0)
             # lg.info(f'  best_exclude: reads with no best alignments {sum(nbest.A1 == 0)}')
             # lg.info(f'  best_exclude: reads with 1 best alignment {sum(nbest.A1 == 1)}')
             # lg.info(f'  best_exclude: reads with >1 best alignments {sum(nbest.A1 > 1)}')
-            rinfo.log()
-            return bestmat.multiply(nbest == 1)
+            reassign_mat = bestmat.multiply(nbest == 1)
         elif mode == 'best_conf':
             ''' Zero out all values less than threshold. Since each row must 
                 sum to 1, if threshold > 0.5 then each row will have at most 1
@@ -985,12 +987,12 @@ class TelescopeLikelihood(object):
                 msg = f"Confidence threshold ({thresh}) must be > 0.5"
                 raise StellarscopeError(msg)
 
-            confmat = csr_matrix(self.z > thresh, dtype=np.uint8)
+            confmat = csr_matrix(self.z > thresh, dtype=np.int8)
 
             rowmax = self.z.max(1)
             rinfo.assigned = sum(rowmax.data > thresh)
             rinfo.ambiguous = sum(rowmax.data <= thresh)
-            rinfo.unaligned = rowmax.shape[0] - rowmax.nnz
+            # rinfo.unaligned = rowmax.shape[0] - rowmax.nnz
 
 
             # assert np.all(confmat.sum(1) <= 1)
@@ -999,7 +1001,7 @@ class TelescopeLikelihood(object):
             # lg.info(f'  best_conf: reads with zero confidence {zero_conf}')
             # lg.info(f'  best_conf: reads with low confidence alignments {low_conf}')
             # lg.info(f'  best_conf: reads with high confidence alignments {high_conf}')
-            return confmat
+            reassign_mat = confmat
         elif mode == 'best_random':
             ''' Identify best PP(s), then randomly choose one per row '''
             bestmat = self.z.binmax(1)
@@ -1007,7 +1009,7 @@ class TelescopeLikelihood(object):
 
             rinfo.assigned = sum(nbest.A1 == 1)
             rinfo.ambiguous = sum(nbest.A1 > 1)
-            rinfo.unaligned = sum(nbest.A1 == 0)
+            # rinfo.unaligned = sum(nbest.A1 == 0)
 
             rinfo.ambigous_dist = Counter(nbest.A1)
             # lg.info(f'  best_random: reads with no best alignments {sum(nbest.A1 == 0)}')
@@ -1016,7 +1018,7 @@ class TelescopeLikelihood(object):
             # for nb in range(2,max(nbest_dist.keys())):
             #     lg.info(
             #         f'    best_random: reads with {nb} best alignments {nbest_dist[nb]}')
-            return bestmat.choose_random(1, self.opts.rng)
+            reassign_mat = bestmat.choose_random(1, self.opts.rng)
         elif mode == 'best_average':
             ''' Identify best PP(s), then divide by row sum '''
             bestmat = self.z.binmax(1)
@@ -1024,7 +1026,7 @@ class TelescopeLikelihood(object):
 
             rinfo.assigned = sum(nbest.A1 == 1)
             rinfo.ambiguous = sum(nbest.A1 > 1)
-            rinfo.unaligned = sum(nbest.A1 == 0)
+            # rinfo.unaligned = sum(nbest.A1 == 0)
 
             rinfo.ambigous_dist = Counter(nbest.A1)
             # lg.info(f'  best_average: reads with no best alignments {sum(nbest.A1 == 0)}')
@@ -1033,19 +1035,19 @@ class TelescopeLikelihood(object):
             # for nb in range(2,max(nbest_dist.keys())):
             #     lg.info(
             #         f'    best_average: reads with {nb} best alignments {nbest_dist[nb]}')
-            return bestmat.norm(1)
+            reassign_mat = bestmat.norm(1)
         elif mode == 'initial_unique':
             ''' Remove ambiguous rows and set nonzero values to 1 '''
-            unimap = (self.Q.multiply(self.Y_uni) > 0).astype(np.uint8)
+            unimap = (self.Q.multiply(self.Y_uni) > 0).astype(np.int8)
 
             rinfo.assigned = unimap.nnz
             rinfo.ambiguous = self.Y_amb.nnz
-            rinfo.unaligned = self.Y_0.nnz
+            # rinfo.unaligned = self.Y_0.nnz
             # assignments_old = self.Q.norm(1).multiply(self.Y_uni).ceil().astype(np.uint8)
             # assert assignments.check_equal(assignments_old)
             # lg.info(
             #     f'  initial_unique: uniquely mapped reads {assignments.nnz}')
-            return unimap
+            reassign_mat = unimap
         elif mode == 'initial_random':
             ''' Identify best scores in initial matrix then randomly choose one
                 per row
@@ -1055,24 +1057,25 @@ class TelescopeLikelihood(object):
 
             rinfo.assigned = sum(nbest_raw.A1 == 1)
             rinfo.ambiguous = sum(nbest_raw.A1 > 1)
-            rinfo.unaligned = sum(nbest_raw.A1 == 0)
+            # rinfo.unaligned = sum(nbest_raw.A1 == 0)
 
             rinfo.ambigous_dist = Counter(nbest_raw.A1)
-            return bestraw.choose_random(1, self.opts.rng)
+            reassign_mat = bestraw.choose_random(1, self.opts.rng)
         elif mode == 'total_hits':
             ''' Return all nonzero elements in initial matrix '''
             # matrix where mapped equals 1, otherwise 0
-            mapped = csr_matrix(self.raw_scores > 0, dtype=np.uint8)
+            mapped = csr_matrix(self.raw_scores > 0, dtype=np.int8)
             mapped_rowsum = mapped.sum(1)
 
             rinfo.assigned = mapped.sum()
             rinfo.ambiguous = sum(mapped_rowsum.A1 > 1)
-            rinfo.unaligned = sum(mapped_rowsum.A1 == 0)
+            # rinfo.unaligned = sum(mapped_rowsum.A1 == 0)
 
-            return mapped
+            reassign_mat = mapped
 
-        raise StellarscopeError('Reassignment method did not return')
-        return
+        if reassign_mat is None:
+            raise StellarscopeError('reassign_mat was not set.')
+        return reassign_mat, rinfo
 
 class Assigner:
     def __init__(self, annotation: annotation.BaseAnnotation,
@@ -1289,7 +1292,7 @@ def _fit_pooling_model(
             ''' No reads for this celltype '''
             if not _rows: continue
 
-            _I = row_identity_matrix(_rows, _fullmat.shape[0])
+            _I = rowid(_rows, _fullmat.shape[0])
             yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
     def _tl_generator_individual():
@@ -1303,7 +1306,7 @@ def _fit_pooling_model(
         """
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
-            _I = row_identity_matrix(_rows, _fullmat.shape[0])
+            _I = rowid(_rows, _fullmat.shape[0])
             yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
     """ Fit pooling model """
@@ -1367,7 +1370,6 @@ def _fit_pooling_model(
 class Stellarscope(Telescope):
 
     opts: "StellarscopeAssignOptions"
-    corrected: csr_matrix | None
     read_bcode_map: dict[str, str]
     read_umi_map: dict[str, str]
     bcode_ridx_map: DefaultDict[str, set[int]]
@@ -1376,6 +1378,11 @@ class Stellarscope(Telescope):
     bcode_ctype_map: dict[str, str]
     ctype_bcode_map: DefaultDict[set[str]]
     celltypes: list[str]
+
+    corrected: csr_matrix | None
+    umi_dups: csr_matrix | None
+
+    reassignments: dict[str, csr_matrix]
 
     def __init__(self, opts):
         """
@@ -1406,9 +1413,6 @@ class Stellarscope(Telescope):
             self.ref_lengths = sf.lengths
 
         '''
-        self.single_cell = True
-
-        self.corrected = None
         self.read_bcode_map = {}                # {read_id (str): barcode (str)}
         self.read_umi_map = {}                  # {read_id (str): umi (str)}
         self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
@@ -1420,6 +1424,11 @@ class Stellarscope(Telescope):
         self.bcode_ctype_map = {}
         self.ctype_bcode_map = defaultdict(set)
         self.celltypes = []
+
+        self.corrected = None
+        self.umi_dups = None
+
+        self.reassignments = {}
 
         return
 
@@ -1601,9 +1610,9 @@ class Stellarscope(Telescope):
         _mappings = []
         assign = Assigner(annotation, self.opts).assign_func()
 
-        if not self.single_cell:
-            raise StellarscopeError('Stellarscope object is not single cell')
-        _all_read_barcodes = []
+        # if not self.single_cell:
+        #     raise StellarscopeError('Stellarscope object is not single cell')
+        # _all_read_barcodes = []
 
         # Initialize variables for function
         alninfo = OrderedDict()
@@ -1797,8 +1806,8 @@ class Stellarscope(Telescope):
 
 
         exclude_rows = [self.read_index[qname] for qname in exclude_qnames]
-        # exclude_mat = row_identity_matrix(exclude_rows, self.shape[0])
-        self.umi_dups = row_identity_matrix(exclude_rows, self.shape[0])
+        # exclude_mat = rowid(exclude_rows, self.shape[0])
+        self.umi_dups = rowid(exclude_rows, self.shape[0])
         # self.corrected = (self.raw_scores - self.raw_scores.multiply(self.umi_duplicates))
         self.corrected = self.raw_scores.multiply(bool_inv(self.umi_dups))
         if summary:
@@ -1828,6 +1837,24 @@ class Stellarscope(Telescope):
             processes=self.opts.nproc,
             progress=100
         )
+
+    def reassign(self, tl: TelescopeLikelihood):
+        """
+
+        Returns
+        -------
+
+        """
+        if not hasattr(self, "reassignments"):
+            self.reassignments = {}
+
+        for _rmode in self.opts.reassign_mode:
+            _thresh = self.opts.conf_prob if _rmode == 'best_conf' else None
+            _rmat,_rinfo = tl.reassign(_rmode, _thresh)
+            self.reassignments[_rmode] = _rmat
+            _rinfo.log()
+        return
+
 
     def save(self, filename: Union[str, bytes, os.PathLike]):
         """ Save current state of Stellarscope object
@@ -1873,17 +1900,19 @@ class Stellarscope(Telescope):
 
         """
 
-        def reassign_using_mode(reassign_mode, output_mtx, conf_prob):
-            ''' Reassign reads '''
-            _assigned = tl.reassign(reassign_mode, conf_prob)
-
+        def agg_bc(reassigned, umi_counts=False):
             # Loading mtx in R does not support unsigned ints
-            # np.int16 (max=32767) is probably enough
-            # Using np.int32 (max=2147483647), switch to 32-bit if mem errors
-            mtx_dtype = np.float64 if reassign_mode == 'average' else np.int32
+            # Could use np.int16 (max=32767) if consuming too much memory
+            # Currently using np.int32 (max=2147483647)
+            if np.issubdtype(reassigned.dtype, np.integer):
+                mtx_dtype = np.int32
+            elif np.issubdtype(reassigned.dtype, np.floating):
+                mtx_dtype = np.float64
+            else:
+                raise StellarscopeError("reassigned is not int or float")
 
             ''' Aggregate by barcode '''
-            _bc_counts = []
+            bcsum_list = []
             _empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
             for _bc in _bc_list:
                 if _bc not in self.bcode_ridx_map:
@@ -1892,25 +1921,43 @@ class Stellarscope(Telescope):
                         # that are not in self.bcode_ridx_map, since the latter
                         # only contains barcodes for reads that align to the TE
                         # annotation.
-                        _bc_counts.append(_empty_cell)
+                        bcsum_list.append(_empty_cell)
                         continue
                     else:
                         msg = f'barcode "{_bc}" not in _bc_list, '
                         msg += 'not using whitelist.'
                         raise StellarscopeError(msg)
 
-                _rows = sorted(self.bcode_ridx_map[_bc])
-                _I = row_identity_matrix(_rows, _assigned.shape[0])
-                _assigned_cell = _assigned.multiply(_I)
-                _cell_colsums = _assigned_cell.colsums()
-                _bc_counts.append(_cell_colsums)
+                _bcmat = reassigned.multiply(
+                    rowid(self.bcode_ridx_map[_bc], reassigned.shape[0])
+                )
+                if umi_counts:
+                    _bcsums = dok_matrix((1, self.shape[1]), dtype=mtx_dtype)
+                    _nzrow, _nzcol = _bcmat.nonzero()
+                    _nzumi = [umi_order[r] for r in _nzrow]
+                    _fidx_umiwt = defaultdict(lambda: defaultdict(list))
+                    for umi, ridx, fidx in zip(_nzumi, _nzrow, _nzcol):
+                        _fidx_umiwt[fidx][umi].append(_bcmat[ridx, fidx])
 
-            assert all(_.shape == (1, len(_ft_list)) for _ in _bc_counts)
-            assert len(_bc_counts) == len(_bc_list)
+                    for fidx, umiwt in _fidx_umiwt.items():
+                        fsum = sum(max(wt) for umi, wt in umiwt.items())
+                        _bcsums[0, fidx] = fsum
+
+                    _bcsums = csr_matrix(_bcsums)
+                else:
+                    _bcsums = _bcmat.colsums()
+                bcsum_list.append(_bcsums)
+
+            if not all(_.shape == (1, len(_ft_list)) for _ in bcsum_list):
+                raise StellarscopeError("Incompatible shape")
+            if not len(bcsum_list) == len(_bc_list):
+                raise StellarscopeError("len(_bc_counts) != len(_bc_list)")
 
             ''' Write counts to MTX '''
-            tstacked = scipy.sparse.vstack(_bc_counts,
-                                           dtype=mtx_dtype).transpose()
+            return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
+
+
+        def mtx_meta(reassign_mode):
             _meta = OrderedDict({
                 'PN': 'stellarscope',
                 'VN': self.opts.version,
@@ -1925,15 +1972,12 @@ class Stellarscope(Telescope):
                 _meta['whitelist'] = self.opts.whitelist
             _meta['pooling_mode'] = self.opts.pooling_mode
             _meta['reassign_mode'] = reassign_mode
+            if self.opts.ignore_umi:
+                _meta['ignore_umi'] = 'Yes'
+                _meta['umi_counts'] = 'Yes' if self.opts.umi_counts else 'No'
             _meta['command'] = ' '.join(sys.argv)
 
-            _comment_str = '\n '.join(f'{k}: {v}' for k, v in _meta.items())
-
-            scipy.io.mmwrite(output_mtx, tstacked, comment=_comment_str)
-
-            if self.opts.devmode:
-                fn = self.opts.outfile_path(f'03-{reassign_mode}.devmode_mat')
-                dump_data(fn, tstacked)
+            return '\n '.join(f'{k}: {v}' for k, v in _meta.items())
 
         ''' Write cell barcodes to tsv '''
         _bc_tsv = self.opts.outfile_path('barcodes.tsv')
@@ -1951,13 +1995,18 @@ class Stellarscope(Telescope):
             print('\n'.join(_ft_list), file=outh)
 
         ''' Output count matrix '''
+        if self.opts.umi_counts:
+            lg.info("  using UMI counts")
+            umi_order = [self.read_umi_map[qname] for qname, ridx in
+                         sorted(self.read_index, key=self.read_index.get)]
         for i, _rmode in enumerate(self.opts.reassign_mode):
             if i == 0:
                 _out_mtx = self.opts.outfile_path('TE_counts.mtx')
             else:
                 _out_mtx = self.opts.outfile_path(f'TE_counts.{_rmode}.mtx')
 
-            reassign_using_mode(_rmode, _out_mtx, self.opts.conf_prob)
+            _counts = agg_bc(self.reassignments[_rmode], self.opts.umi_counts)
+            scipy.io.mmwrite(_out_mtx, _counts, comment=mtx_meta(_rmode))
         return
 
     def output_report_old(self, tl, stats_filename, counts_filename,
@@ -2075,6 +2124,57 @@ class Stellarscope(Telescope):
 
             if _method == _rmethod:
                 scipy.io.mmwrite(counts_filename, _cell_count_matrix)
+
+    def update_sam(self, tl, filename, all_alns=True):
+        _rmode = self.opts.reassign_mode[0]
+        _fnames = sorted(self.feat_index, key=self.feat_index.get)
+
+        mat = self.reassignments[_rmode]
+        # best_feats = {i: _fnames for i, j in zip(*mat.nonzero())}
+
+        _pysam_verbosity = pysam.set_verbosity(0)
+        with pysam.AlignmentFile(self.tmp_bam, check_sq=False) as sf:
+            pysam.set_verbosity(_pysam_verbosity)
+            header = sf.header
+            header['PG'].append({
+                'PN': 'telescope', 'ID': 'telescope',
+                'VN': self.run_info['version'],
+                'CL': ' '.join(sys.argv),
+            })
+            outsam = pysam.AlignmentFile(filename, 'wb', header=header)
+            for code, pairs in alignment.fetch_fragments_seq(sf,
+                                                             until_eof=True):
+                if len(pairs) == 0: continue
+                ridx = self.read_index[pairs[0].query_name]
+                for aln in pairs:
+                    if aln.is_unmapped:
+                        if all_alns:
+                            aln.write(outsam)
+                        continue
+                    if not aln.r1.has_tag('ZT'):
+                        raise StellarscopeError('Missing ZT tag')
+                    if aln.r1.get_tag('ZT') == 'SEC':
+                        aln.set_flag(pysam.FSECONDARY)
+                        aln.set_tag('YC', c2str((248, 248, 248)))
+                        aln.set_mapq(0)
+                    else:
+                        fidx = self.feat_index[aln.r1.get_tag('ZF')]
+                        prob = tl.z[ridx, fidx]
+                        aln.set_mapq(phred(prob))
+                        # aln.set_tag('XP', int(round(prob * 100)))
+                        # float
+                        aln.set_tag('XP', prob, 'f')
+                        if mat[ridx, fidx] > 0:
+                            aln.unset_flag(pysam.FSECONDARY)
+                            aln.set_tag('YC', c2str(D2PAL['vermilion']))
+                        else:
+                            aln.set_flag(pysam.FSECONDARY)
+                            if prob >= 0.2:
+                                aln.set_tag('YC', c2str(D2PAL['yellow']))
+                            else:
+                                aln.set_tag('YC', c2str(GPAL[2]))
+                    aln.write(outsam)
+            outsam.close()
 
     def print_summary(self, loglev=lg.WARNING):
         _info = self.run_info

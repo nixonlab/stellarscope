@@ -89,51 +89,55 @@ class ReassignInfo(GenericInfo):
     reassign_mode: str
     assigned: int
     ambiguous: int
-    unaligned: int
+    unaligned: int | None
     ambiguous_dist: typing.Counter | None
 
     def __init__(self, reassign_mode: str):
         self.reassign_mode = reassign_mode
         self.assigned = 0
         self.ambiguous = 0
-        self.unaligned = 0
+        self.unaligned = None
         self.ambiguous_dist = None
 
-    def format(self):
+    def format(self, include_mode=True):
         _m = self.reassign_mode
+        prefix = f'{_m} - ' if include_mode else ''
 
         ret = []
         # assigned
         if _m == 'total_hits':
-            ret.append(f'{_m} - {self.assigned} total alignments.')
+            ret.append(f'{prefix}{self.assigned} total alignments.')
         elif _m == 'initial_unique':
-            ret.append(f'{_m} - {self.assigned} uniquely mapped: {self.assigned}')
+            ret.append(f'{prefix}{self.assigned} uniquely mapped: {self.assigned}')
         else:
-            ret.append(f'{_m} - {self.assigned} assigned.')
+            ret.append(f'{prefix}{self.assigned} assigned.')
 
         # ambiguous
         if _m == 'best_exclude':
-            ret.append(f'{_m} - {self.ambiguous} remain ambiguous (excluded).')
+            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (excluded).')
         elif _m == 'best_conf':
-            ret.append(f'{_m} - {self.ambiguous} low confidence (excluded).')
+            ret.append(f'{prefix}{self.ambiguous} low confidence (excluded).')
         elif _m == 'best_random':
-            ret.append(f'{_m} - {self.ambiguous} remain ambiguous (randomly assigned).')
+            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (randomly assigned).')
         elif _m == 'best_average':
-            ret.append(f'{_m} - {self.ambiguous} remain ambiguous (divided evenly).')
+            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (divided evenly).')
         elif _m == 'initial_unique':
-            ret.append(f'{_m} - {self.ambiguous} are ambiguous (discarded).')
+            ret.append(f'{prefix}{self.ambiguous} are ambiguous (discarded).')
         elif _m == 'initial_random':
-            ret.append(f'{_m} - {self.ambiguous} are ambiguous (randomly assigned).')
+            ret.append(f'{prefix}{self.ambiguous} are ambiguous (randomly assigned).')
         elif _m == 'total_hits':
-            ret.append(f'{_m} - {self.ambiguous} had multiple alignments.')
+            ret.append(f'{prefix}{self.ambiguous} had multiple alignments.')
 
         # unaligned
-        ret.append(f'{_m} - {self.unaligned} had no alignments.')
+        if self.unaligned is not None:
+            ret.append(f'{prefix}{self.unaligned} had no alignments.')
 
         return ret
 
     def log(self, indent=2, loglev=lg.INFO):
-        for _l in self.format():
+        header = " "*indent + f'Reassignment using {self.reassign_mode}'
+        lg.log(loglev, header)
+        for _l in self.format(False):
             if indent:
-                _l = " "*indent + _l
+                _l = " "*(indent*2) + _l
             lg.log(loglev, _l)
