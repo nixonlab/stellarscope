@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from calignment cimport AlignedPair
+from stellarscope.utils.calignment cimport AlignedPair
 
 from .helpers import merge_blocks
 
