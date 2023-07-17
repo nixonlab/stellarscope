@@ -30,6 +30,7 @@ from .utils.model import Stellarscope
 from .utils import model
 
 from .utils.annotation import get_annotation_class
+from .utils._annotation_intervaltree import _StrandedAnnotationIntervalTree
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
 
@@ -256,6 +257,7 @@ def run(args):
 
     ''' Load annotation '''
     Annotation = get_annotation_class(opts.annotation_class)
+    # Annotation = _StrandedAnnotationIntervalTree
     lg.info('Loading annotation...')
     stime = time()
     annot = Annotation(opts.gtffile, opts.attribute, opts.stranded_mode)
