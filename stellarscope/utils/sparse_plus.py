@@ -305,3 +305,22 @@ def bool_inv(m):
         np.ones(m.shape) - m,
         dtype=m.dtype
     )
+
+
+def divide_extp(num, denom):
+    if np.ndim(num) == 2 and np.ndim(denom) == 0: # matrix / scalar
+        _num_csr = csr_matrix_plus(num)
+        _log_num_data = np.log(_num_csr.data)
+        _log_denom = np.log(denom)
+        _ret_data = np.exp(_log_num_data - _log_denom)
+        return csr_matrix_plus(
+            (
+                _ret_data,
+                _num_csr.indices,
+                _num_csr.indptr
+            ),
+            shape=_num_csr.shape,
+            dtype=np.longdouble
+        )
+    raise ValueError('`divide_extp` implemented for dividing matrix by scalar')
+
