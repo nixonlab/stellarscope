@@ -8,7 +8,7 @@ from past.utils import old_div
 
 import re
 import sys
-# import os
+import os
 import logging as lg
 from collections import OrderedDict, defaultdict, Counter
 # import gc
@@ -20,6 +20,7 @@ import pickle
 from time import perf_counter
 
 import numpy as np
+from numpy import longdouble as xdbl
 import scipy
 import pandas as pd
 import pysam
@@ -34,6 +35,7 @@ from .helpers import dump_data
 from .sparse_plus import csr_matrix_plus as csr_matrix
 from .sparse_plus import row_identity_matrix as rowid
 from .sparse_plus import bool_inv
+from .sparse_plus import divide_extp
 from .statistics import FitInfo, PoolInfo, ReassignInfo
 
 from .colors import c2str, D2PAL, GPAL
@@ -764,31 +766,44 @@ class TelescopeLikelihood(object):
 
         """
         lg.debug('CALL: TelescopeLikelihood.mstep()')
-        # The expected values of z weighted by mapping score
-        _weighted = z.multiply(self._weights)
+        def _mstep_dp():
+            # The expected values of z weighted by mapping score
+            _weighted = z.multiply(self._weights)
 
-        # Estimate theta_hat
-        _thetasum = _weighted.multiply(self.Y_amb).sum(0)
-        # _theta_denom = self._ambig_wt + self._theta_prior_wt * self.K
-        # assert self._theta_denom == _theta_denom
-        _theta_hat = (_thetasum + self._theta_prior_wt) / self._theta_denom
+            # Estimate theta_hat
+            _thetasum = _weighted.multiply(self.Y_amb).sum(0)
+            _theta_hat = (_thetasum + self._theta_prior_wt) / self._theta_denom
 
-        # Estimate pi_hat
-        _pisum = self._pisum0 + _thetasum
-        # _pi_denom = self._total_wt + self._pi_prior_wt * self.K
-        # assert self._pi_denom == _pi_denom
+            # Estimate pi_hat
+            _pisum = self._pisum0 + _thetasum
+            _pi_hat = (_pisum + self._pi_prior_wt) / self._pi_denom
+
+            return csr_matrix(_pi_hat), _theta_hat.A1
+
+        def _mstep_xp():
+            lg.debug('mstep: using extended precision')
+            # The expected values of z weighted by mapping score
+            _weighted = z.multiply(self._weights)
+
+            # Estimate theta_hat
+            _thetasum = _weighted.multiply(self.Y_amb).sum(0)
+            _theta_hat = (_thetasum + self._theta_prior_wt) / self._theta_denom
+
+            # Estimate pi_hat
+            _pisum = self._pisum0 + _thetasum
+            _num = xdbl(_pisum) + xdbl(self._pi_prior_wt)
+            _denom = xdbl(self._pi_denom)
+            _pi_hat = divide_extp(_num, _denom)
+            ### sanity check
+            # _pi_hat0 = csr_matrix(_num / _denom)
+            # assert np.allclose(_pi_hat0.data, _pi_hat.data)
+            return _pi_hat, _theta_hat.A1
 
         try:
-            _pi_hat = (_pisum + self._pi_prior_wt) / self._pi_denom
-            if USE_EXTENDED: raise FloatingPointError
+            return _mstep_dp()
         except FloatingPointError:
-            lg.debug('using extended precision')
-            _longnum = np.float128(_pisum + self._pi_prior_wt)
-            _longdenom = np.float128(self._pi_denom)
-            _pi_hat = _longnum / _longdenom
+            return _mstep_xp()
 
-        lg.debug('EXIT: TelescopeLikelihood.mstep()')
-        return csr_matrix(_pi_hat), _theta_hat.A1
 
     def calculate_lnl(self, z, pi, theta):
         """
