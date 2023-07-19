@@ -36,7 +36,7 @@ from .sparse_plus import csr_matrix_plus as csr_matrix
 from .sparse_plus import row_identity_matrix as rowid
 from .sparse_plus import bool_inv
 from .sparse_plus import divide_extp
-from .statistics import FitInfo, PoolInfo, ReassignInfo
+from .statistics import FitInfo, PoolInfo, ReassignInfo, UMIInfo
 
 from .colors import c2str, D2PAL, GPAL
 from .helpers import str2int, region_iter, phred
@@ -1741,10 +1741,8 @@ class Stellarscope(Telescope):
         -------
 
         """
-        umiinfo = OrderedDict()
+        umiinfo = UMIInfo()
         exclude_qnames: dict[str, int] = {}  # reads to be excluded
-        # duplicated_umis is redundant - could remove this if needed
-        # duplicated_umis = defaultdict(lambda: {'reps': [], 'exclude': []})
 
         if output_report:
             umiFH = open(self.opts.outfile_path('umi_tracking.txt'), 'w')
@@ -1755,32 +1753,12 @@ class Stellarscope(Telescope):
             key = (self.read_bcode_map[qname], self.read_umi_map[qname])
             _ = bcumi_read[key].setdefault(qname, None)
 
-        """ Summary information """
-        reads_per_umi = list(map(len, bcumi_read.values()))
-        umiinfo['rpu_hist'], umiinfo['rpu_bins'] = np.histogram(
-            reads_per_umi,
-            bins = [1, 2, 3, 4, 5, 6, 11, 21, max(reads_per_umi) + 1]
-        )
-        if summary:
-            num_umi = len(bcumi_read)
-            num_umi_1 = umiinfo["rpu_hist"][0]
-            lg.info(f'Number of BC+UMI pairs: {len(bcumi_read)}')
-            lg.info(f'    unique UMIs: {num_umi_1}')
-            lg.info(f'    duplicated UMIs: {num_umi - num_umi_1}')
-            lg.info(f'    max reads per UMI: {max(reads_per_umi)}')
-            for b_i, v in enumerate(umiinfo['rpu_hist']):
-                bs, be = umiinfo['rpu_bins'][b_i], umiinfo['rpu_bins'][b_i+1]
-                if be == umiinfo['rpu_bins'][-1]:
-                    _bin = f'>{bs-1}'
-                elif be - bs == 1:
-                    _bin = f'{bs}'
-                else:
-                    _bin = f'{bs}-{be - 1}'
-                lg.info(f'        UMIs with {_bin} reads: {v}')
+        """ Update umiinfo """
+        sumlvl = lg.INFO if summary else lg.DEBUG
+        umiinfo.set_rpu(bcumi_read)
+        umiinfo.prelog(sumlvl)
 
         ''' Loop over all bc+umi pairs'''
-        umiinfo['ncomps_umi'] = Counter()
-        umiinfo['nexclude'] = 0
         for (bc, umi), qnames in bcumi_read.items():
             ''' Unique barcode+umi '''
             if len(qnames) == 1:
@@ -1805,8 +1783,8 @@ class Stellarscope(Telescope):
                 if ex:
                     _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
 
-            umiinfo['ncomps_umi'][len(set(comps))] += 1
-            umiinfo['nexclude'] += sum(is_excluded)
+            umiinfo.ncomps_umi[len(set(comps))] += 1
+            umiinfo.nexclude += sum(is_excluded)
 
             if output_report:
                 print(f'{bc}\t{umi}', file=umiFH)
@@ -1825,25 +1803,19 @@ class Stellarscope(Telescope):
         self.umi_dups = rowid(exclude_rows, self.shape[0])
         # self.corrected = (self.raw_scores - self.raw_scores.multiply(self.umi_duplicates))
         self.corrected = self.raw_scores.multiply(bool_inv(self.umi_dups))
-        if summary:
-            lg.info(f'UMI duplicate reads excluded: {umiinfo["nexclude"]}')
-            lg.info(f'    UMIs with 1 component: {umiinfo["ncomps_umi"][1]}')
-            lg.info(f'    UMIs with 2 components: {umiinfo["ncomps_umi"][2]}')
-            lg.info(f'    UMIs with 3 components: {umiinfo["ncomps_umi"][3]}')
-            _gt3 = sum(v for k,v in umiinfo["ncomps_umi"].items() if k>3)
-            lg.info(f'    UMIs with >3 components: {_gt3}')
-            lg.info(f'Total reads excluded: {umiinfo["nexclude"]}')
 
-        # # Sanity check: check excluded rows are set to zero in self.corrected
-        # # and included rows are the same
-        # for r in range(self.shape[0]):
-        #     if r in exclude_rows:
-        #         assert self.corrected[r,].nnz == 0
-        #     else:
-        #         assert self.raw_scores[r,].check_equal(self.corrected[r,])
-
-        # print(f'nexclude == len(exclude_qnames) is {umiinfo["nexclude"] == len(exclude_qnames)}')
+        umiinfo.postlog(sumlvl)
         return
+
+    """
+        # Sanity check: check excluded rows are set to zero in self.corrected
+        # and included rows are the same
+        for r in range(self.shape[0]):
+            if r in exclude_rows:
+                assert self.corrected[r,].nnz == 0
+            else:
+                assert self.raw_scores[r,].check_equal(self.corrected[r,])
+    """
 
     def fit_pooling_model(self, ):
         return _fit_pooling_model(

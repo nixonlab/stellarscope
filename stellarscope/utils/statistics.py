@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 
-import typing
-from typing import Optional
 import logging as lg
+from collections import Counter
+
+import typing
+from typing import Optional, DefaultDict
+import numpy.typing as npt
 
 
 import numpy as np
@@ -141,3 +144,85 @@ class ReassignInfo(GenericInfo):
             if indent:
                 _l = " "*(indent*2) + _l
             lg.log(loglev, _l)
+
+
+class UMIInfo(GenericInfo):
+    num_umi: int
+    uni_umi: int
+    dup_umi: int
+    max_rpu: int
+    rpu_counter: typing.Counter | None
+    rpu_bins: list[int]
+    rpu_hist: npt.ArrayLike | None
+    possible_dups: int
+    ncomps_umi: typing.Counter
+    nexclude: int
+
+    def __init__(self):
+        self.num_umi = -1
+        self.uni_umi = -1
+        self.dup_umi = -1
+        self.max_rpu = -1
+        self.rpu_counter = None
+        self.rpu_bins = []
+        self.rpu_hist = None
+        self.possible_dups = 0
+        self.ncomps_umi = Counter()
+        self.nexclude = 0
+
+    def set_rpu(
+        self, bcumi_read: DefaultDict[tuple[str,str], dict[str, None]]
+    ):
+        _reads_per_umi = list(map(len, bcumi_read.values()))
+        self.num_umi = len(_reads_per_umi)
+        self.rpu_counter = Counter(_reads_per_umi)
+        self.uni_umi = self.rpu_counter[1]
+        self.dup_umi = self.num_umi - self.uni_umi
+        self.max_rpu = max(self.rpu_counter)
+
+        for i in range(2, self.max_rpu+1):
+            self.possible_dups += (i - 1) * self.rpu_counter[i]
+
+        # Calculate bins
+        if self.max_rpu <= 5:
+            self.rpu_bins = list(range(1, self.max_rpu+2))
+        else:
+            self.rpu_bins = [1, 2, 3, 4, 5, 6, 11, 21]
+            if self.max_rpu > 20:
+                self.rpu_bins.append(self.max_rpu + 1)
+
+        # Calculate histogram
+        self.rpu_hist, _bins = np.histogram(_reads_per_umi, self.rpu_bins)
+        assert list(_bins) == self.rpu_bins
+        return
+
+    def prelog(self, loglev=lg.INFO):
+        lg.log(loglev, f'  Number of BC+UMI pairs: {self.num_umi}')
+        lg.log(loglev, f'    unique UMIs: {self.uni_umi}')
+        lg.log(loglev, f'    duplicated UMIs: {self.dup_umi}')
+        lg.log(loglev, f'    max reads per UMI: {self.max_rpu}')
+        for b_i, v in enumerate(self.rpu_hist):
+            bs, be = self.rpu_bins[b_i], self.rpu_bins[b_i + 1]
+            if be == self.rpu_bins[-1]:
+                _bin = f'>{bs - 1}'
+            elif be - bs == 1:
+                _bin = f'{bs}'
+            else:
+                _bin = f'{bs}-{be - 1}'
+            lg.log(loglev, f'        UMIs with {_bin} reads: {v}')
+        lg.log(loglev, f'    Possible duplicate reads: {self.possible_dups}')
+
+        lg.log(loglev, '  Finding duplicates and selecting representatives...')
+        return
+    def postlog(self, loglev=lg.INFO):
+        lg.log(loglev, f'  Identified UMI duplicate reads excluded: {self.nexclude}')
+        lg.log(loglev, f'    UMIs with 1 component: {self.ncomps_umi[1]}')
+        lg.log(loglev, f'    UMIs with 2 components: {self.ncomps_umi[2]}')
+        lg.log(loglev, f'    UMIs with 3 components: {self.ncomps_umi[3]}')
+        _gt3 = sum(v for k, v in self.ncomps_umi.items() if k > 3)
+        if _gt3:
+            lg.log(loglev, f'    UMIs with >3 components: {_gt3}')
+        lg.log(loglev, f'Total reads excluded: {self.nexclude}')
+
+
+

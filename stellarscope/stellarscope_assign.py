@@ -257,7 +257,7 @@ def run(args):
 
     ''' Load annotation '''
     Annotation = get_annotation_class(opts.annotation_class)
-    # Annotation = _StrandedAnnotationIntervalTree
+    Annotation = _StrandedAnnotationIntervalTree
     lg.info('Loading annotation...')
     stime = time()
     annot = Annotation(opts.gtffile, opts.attribute, opts.stranded_mode)
@@ -267,25 +267,28 @@ def run(args):
     # annot.save(opts.outfile_path('test_annotation.p'))
 
     ''' Load alignments '''
-    lg.info('Loading alignments...')
+    msg = 'Stage 1: Load alignments'
+    lg.info('#' + msg.center(58, '-') + '#')
     stime = time()
     st_obj.load_alignment(annot)
-    lg.info("Loaded alignment in {}".format(fmtmins(time() - stime)))
-
-    ''' Save object checkpoint '''
-    st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
 
     ''' Print alignment summary '''
     st_obj.print_summary(lg.INFO)
 
-    if opts.devmode:
-        dump_data(opts.outfile_path('00-uncorrected'), st_obj.raw_scores)
-        dump_data(opts.outfile_path('00-read_index'), st_obj.read_index)
-        dump_data(opts.outfile_path('00-feat_index'), st_obj.feat_index)
-        dump_data(opts.outfile_path('00-read_bcode_map'), st_obj.read_bcode_map)
-        dump_data(opts.outfile_path('00-read_umi_map'), st_obj.read_umi_map)
-        dump_data(opts.outfile_path('00-bcode_ridx_map'), st_obj.bcode_ridx_map)
-        dump_data(opts.outfile_path('00-whitelist'), st_obj.whitelist)
+    msg = f"Loaded alignment in {fmtmins(time() - stime)}"
+    lg.info('#' + msg.center(58, '-') + '#')
+
+    ''' Save object checkpoint '''
+    st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
+
+    # if opts.devmode:
+    #     dump_data(opts.outfile_path('00-uncorrected'), st_obj.raw_scores)
+    #     dump_data(opts.outfile_path('00-read_index'), st_obj.read_index)
+    #     dump_data(opts.outfile_path('00-feat_index'), st_obj.feat_index)
+    #     dump_data(opts.outfile_path('00-read_bcode_map'), st_obj.read_bcode_map)
+    #     dump_data(opts.outfile_path('00-read_umi_map'), st_obj.read_umi_map)
+    #     dump_data(opts.outfile_path('00-bcode_ridx_map'), st_obj.bcode_ridx_map)
+    #     dump_data(opts.outfile_path('00-whitelist'), st_obj.whitelist)
 
     ''' Free up memory used by annotation '''
     annot = None
@@ -294,21 +297,24 @@ def run(args):
     if opts.ignore_umi:
         lg.info('Skipping UMI deduplication...')
     else:
-        lg.info('UMI deduplication...')
+        msg = 'Stage 2: UMI deduplication'
+        lg.info('#' + msg.center(58,'-') + '#')
         stime = time()
         st_obj.dedup_umi()
-        lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
+        msg = f"UMI deduplication completed in {fmtmins(time() - stime)}"
+        lg.info('#' + msg.center(58,'-') + '#')
+        lg.info('')
         st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
 
-    if opts.devmode:
-        dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
-        dump_data(opts.outfile_path('01-corrected'), st_obj.corrected)
-        dump_data(opts.outfile_path('01-read_index'), st_obj.read_index)
-        dump_data(opts.outfile_path('01-feat_index'), st_obj.feat_index)
-        dump_data(opts.outfile_path('01-read_bcode_map'), st_obj.read_bcode_map)
-        dump_data(opts.outfile_path('01-read_umi_map'), st_obj.read_umi_map)
-        dump_data(opts.outfile_path('01-bcode_ridx_map'), st_obj.bcode_ridx_map)
-        dump_data(opts.outfile_path('01-whitelist'), st_obj.whitelist)
+    # if opts.devmode:
+    #     dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
+    #     dump_data(opts.outfile_path('01-corrected'), st_obj.corrected)
+    #     dump_data(opts.outfile_path('01-read_index'), st_obj.read_index)
+    #     dump_data(opts.outfile_path('01-feat_index'), st_obj.feat_index)
+    #     dump_data(opts.outfile_path('01-read_bcode_map'), st_obj.read_bcode_map)
+    #     dump_data(opts.outfile_path('01-read_umi_map'), st_obj.read_umi_map)
+    #     dump_data(opts.outfile_path('01-bcode_ridx_map'), st_obj.bcode_ridx_map)
+    #     dump_data(opts.outfile_path('01-whitelist'), st_obj.whitelist)
 
     if opts.skip_em:
         lg.info("Skipping EM...")
@@ -322,7 +328,8 @@ def run(args):
         ts_model = fit_telescope_model(st_obj, opts)
         lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
-    lg.info('Fitting model...')
+    msg = f'Stage 3: Fitting model (pooling mode: {opts.pooling_mode})'
+    lg.info('#' + msg.center(58,'-') + '#')
     stime = time()
     st_model, poolinfo = st_obj.fit_pooling_model()
     lg.info(f'  Total lnL            : {st_model.lnl}')
@@ -331,21 +338,19 @@ def run(args):
     lg.info(f'  total obs: {poolinfo.total_obs()}')
     lg.info(f'  total params: {poolinfo.total_params()}')
     lg.info(f'  BIC: {poolinfo.BIC()}')
-    lg.info("Fitting completed in %s" % fmtmins(time() - stime))
+    msg = f"Fitting completed in {fmtmins(time() - stime)}"
+    lg.info('#' + msg.center(58, '-') + '#')
+    lg.info('')
 
-    # lg.info(f'  Total lnL: {st_model.lnl}')
-    # lg.info(f'  number of models estimated: {len(st_model.lnl_list)}')
-    # lg.info("Fitting completed in %s" % fmtmins(time() - stime))
-
-    if opts.devmode:
-        dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)
-        dump_data(opts.outfile_path('02-corrected'), st_obj.corrected)
-        dump_data(opts.outfile_path('02-read_index'), st_obj.read_index)
-        dump_data(opts.outfile_path('02-feat_index'), st_obj.feat_index)
-        dump_data(opts.outfile_path('02-read_bcode_map'), st_obj.read_bcode_map)
-        dump_data(opts.outfile_path('02-read_umi_map'), st_obj.read_umi_map)
-        dump_data(opts.outfile_path('02-bcode_ridx_map'), st_obj.bcode_ridx_map)
-        dump_data(opts.outfile_path('02-whitelist'), st_obj.whitelist)
+    # if opts.devmode:
+    #     dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)
+    #     dump_data(opts.outfile_path('02-corrected'), st_obj.corrected)
+    #     dump_data(opts.outfile_path('02-read_index'), st_obj.read_index)
+    #     dump_data(opts.outfile_path('02-feat_index'), st_obj.feat_index)
+    #     dump_data(opts.outfile_path('02-read_bcode_map'), st_obj.read_bcode_map)
+    #     dump_data(opts.outfile_path('02-read_umi_map'), st_obj.read_umi_map)
+    #     dump_data(opts.outfile_path('02-bcode_ridx_map'), st_obj.bcode_ridx_map)
+    #     dump_data(opts.outfile_path('02-whitelist'), st_obj.whitelist)
 
     # Output final report
     if opts.old_report:
