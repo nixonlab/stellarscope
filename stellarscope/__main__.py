@@ -9,6 +9,7 @@ import sys
 import os
 import argparse
 import errno
+import warnings
 
 import numpy as np
 
@@ -27,7 +28,7 @@ __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
     not ignored and need to be handled.
 '''
 np.seterr(all='raise')
-
+# np.seterr(divide='raise', over='raise', under='warn', invalid='raise')
 
 def generate_test_command(args, singlecell = False):
     try:

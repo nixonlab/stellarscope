@@ -216,7 +216,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         try:
             return type(self)(super().multiply(other))
         except FloatingPointError:
-            lg.info('using extended precision: multiply')
+            lg.debug('using extended precision: csr_matrix_plus.multiply')
             np.seterr(under='warn')
             longcopy = scipy.sparse.csr_matrix(self).astype(np.float128)
             ret = type(self)(longcopy.multiply(other))

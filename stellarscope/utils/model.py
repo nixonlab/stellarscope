@@ -829,8 +829,6 @@ class TelescopeLikelihood(object):
         lg.debug('CALL: TelescopeLikelihood.calculate_lnl()')
         try:
             _pitheta = pi.multiply(theta)
-            # _pitheta = pi * theta
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (pi*theta)')
             pi = pi.astype(np.float128)
@@ -841,7 +839,6 @@ class TelescopeLikelihood(object):
         try:
             _amb = self._ambQ.multiply(_pitheta)
             _uni = self._uniQ.multiply(pi)
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (_amb and _uni)')
             _amb = self._ambQ.multiply(_pitheta)
@@ -849,19 +846,15 @@ class TelescopeLikelihood(object):
 
         try:
             _inner = csr_matrix(_amb + _uni)
-            #_log_inner = _inner.log1p()
             _log_inner = csr_matrix(_inner)
             _log_inner.data = np.log(_inner.data)
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (_inner)')
             _inner = csr_matrix(_amb + _uni, dtype=np.float128)
-            #_log_inner = _inner.log1p()
             _log_inner = csr_matrix(_inner)
             _log_inner.data = np.log(_inner.data)
         try:
             ret = z.multiply(_log_inner).sum()
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (z)')
             ret = z.astype(np.float128).multiply(_log_inner).sum()
