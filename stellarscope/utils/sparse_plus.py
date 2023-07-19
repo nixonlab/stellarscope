@@ -202,13 +202,26 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         return ret
 
     def multiply(self, other):
+        def _logsumexp():
+            _logself = self.astype(np.float128)
+            _logself.data = np.log(_logself.data)
+
+            _logother = type(self)(other, dtype=np.float128)
+            _logother.data = np.log(_logother.data)
+
+            _sum = _logself + _logother
+            _exp = np.exp(_sum)
+            return type(self)(_exp)
+
         try:
             return type(self)(super().multiply(other))
         except FloatingPointError:
-            lg.debug('using extended precision')
+            lg.info('using extended precision: multiply')
+            np.seterr(under='warn')
             longcopy = scipy.sparse.csr_matrix(self).astype(np.float128)
-            return type(self)(longcopy.multiply(other))
-
+            ret = type(self)(longcopy.multiply(other))
+            np.seterr(all='raise')
+            return ret
 
     def colsums(self) -> csr_matrix_plus:
         """ Sum columns and return as `csr_matrix_plus`
@@ -308,7 +321,7 @@ def bool_inv(m):
 
 
 def divide_extp(num, denom):
-    np.seterr(all='warn')
+    np.seterr(under='warn')
     if np.ndim(num) == 2 and np.ndim(denom) == 0: # matrix / scalar
         _num_csr = csr_matrix_plus(num)
         _log_num_data = np.log(_num_csr.data)

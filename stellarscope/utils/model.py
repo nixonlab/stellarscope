@@ -742,23 +742,31 @@ class TelescopeLikelihood(object):
         self.fitinfo = FitInfo(self)
         return
 
-    def _estep_xp(self, pi, theta):
-        lg.info('Using extended precision')
-        return self.estep(
-            pi.astype(np.float128),
-            theta.astype(np.float128)
-        )
     def estep(self, pi, theta):
         """ Calculate the expected values of z
                 E(z[i,j]) = ( pi[j] * theta[j]**Y[i] * Q[i,j] ) /
         """
         lg.debug('CALL: TelescopeLikelihood.estep()')
-        try:
+        def _estep_dp():
             _amb = self._ambQ.multiply(pi).multiply(theta)
             _uni = self._uniQ.multiply(pi)
             return (_amb + _uni).norm(1)
+
+        def _estep_xp():
+            lg.debug('estep: using extended precision')
+            _xpi = pi.astype(np.float128)
+            _xtheta = theta.astype(np.float128)
+            _xambQ = self._ambQ.astype(np.float128)
+            _xuniQ = self._uniQ.astype(np.float128)
+
+            _amb = _xambQ.multiply(_xpi).multiply(_xtheta)
+            _uni = _xuniQ.multiply(_xpi)
+            return (_amb + _uni).norm(1)
+
+        try:
+            return _estep_dp()
         except FloatingPointError:
-            return self._estep_xp(pi, theta)
+            return _estep_xp()
 
 
     def mstep(self, z):
