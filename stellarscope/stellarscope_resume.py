@@ -113,12 +113,6 @@ def run(args):
     lg.info(f'Using pooling mode(s): {opts.pooling_mode}')
 
     if opts.pooling_mode == 'celltype':
-        # if len(st_obj.bcode_ctype_map):
-        #     lg.info(f'bcode_ctype_map contains data')
-        # if len(st_obj.ctype_bcode_map):
-        #     lg.info(f'ctype_bcode_map contains data')
-        # if len(st_obj.celltypes):
-        #     lg.info(f'celltypes contains data')
         if opts.celltype_tsv:
             if len(st_obj.bcode_ctype_map):
                 lg.info(f'Existing celltype assignments discarded.')
@@ -178,6 +172,7 @@ def run(args):
     st_obj.output_report(st_model)
     lg.info("Report generated in %s" % fmtmins(time() - stime))
 
+    st_obj.save(opts.outfile_path('checkpoint.final.pickle'))
     lg.info(f"stellarscope resume complete in {fmtmins(time() - total_time)}")
     return
 

@@ -742,23 +742,31 @@ class TelescopeLikelihood(object):
         self.fitinfo = FitInfo(self)
         return
 
-    def _estep_xp(self, pi, theta):
-        lg.info('Using extended precision')
-        return self.estep(
-            pi.astype(np.float128),
-            theta.astype(np.float128)
-        )
     def estep(self, pi, theta):
         """ Calculate the expected values of z
                 E(z[i,j]) = ( pi[j] * theta[j]**Y[i] * Q[i,j] ) /
         """
         lg.debug('CALL: TelescopeLikelihood.estep()')
-        try:
+        def _estep_dp():
             _amb = self._ambQ.multiply(pi).multiply(theta)
             _uni = self._uniQ.multiply(pi)
             return (_amb + _uni).norm(1)
+
+        def _estep_xp():
+            lg.debug('estep: using extended precision')
+            _xpi = pi.astype(np.float128)
+            _xtheta = theta.astype(np.float128)
+            _xambQ = self._ambQ.astype(np.float128)
+            _xuniQ = self._uniQ.astype(np.float128)
+
+            _amb = _xambQ.multiply(_xpi).multiply(_xtheta)
+            _uni = _xuniQ.multiply(_xpi)
+            return (_amb + _uni).norm(1)
+
+        try:
+            return _estep_dp()
         except FloatingPointError:
-            return self._estep_xp(pi, theta)
+            return _estep_xp()
 
 
     def mstep(self, z):
@@ -801,8 +809,11 @@ class TelescopeLikelihood(object):
 
         try:
             return _mstep_dp()
-        except FloatingPointError:
+        except (FloatingPointError, RuntimeWarning) as e:
+            if 'underflow encountered in divide' not in e.args:
+                raise StellarscopeError(e.args)
             return _mstep_xp()
+
 
 
     def calculate_lnl(self, z, pi, theta):
@@ -821,8 +832,6 @@ class TelescopeLikelihood(object):
         lg.debug('CALL: TelescopeLikelihood.calculate_lnl()')
         try:
             _pitheta = pi.multiply(theta)
-            # _pitheta = pi * theta
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (pi*theta)')
             pi = pi.astype(np.float128)
@@ -833,7 +842,6 @@ class TelescopeLikelihood(object):
         try:
             _amb = self._ambQ.multiply(_pitheta)
             _uni = self._uniQ.multiply(pi)
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (_amb and _uni)')
             _amb = self._ambQ.multiply(_pitheta)
@@ -841,19 +849,15 @@ class TelescopeLikelihood(object):
 
         try:
             _inner = csr_matrix(_amb + _uni)
-            #_log_inner = _inner.log1p()
             _log_inner = csr_matrix(_inner)
             _log_inner.data = np.log(_inner.data)
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (_inner)')
             _inner = csr_matrix(_amb + _uni, dtype=np.float128)
-            #_log_inner = _inner.log1p()
             _log_inner = csr_matrix(_inner)
             _log_inner.data = np.log(_inner.data)
         try:
             ret = z.multiply(_log_inner).sum()
-            if USE_EXTENDED: raise FloatingPointError
         except FloatingPointError:
             lg.debug('using extended precision (z)')
             ret = z.astype(np.float128).multiply(_log_inner).sum()
