@@ -16,18 +16,17 @@ from numpy.random import default_rng
 
 import logging as lg
 
+
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
 def _recip0(v):
     ''' Return the reciprocal of a vector '''
-    old_settings = np.seterr(divide='ignore')
+    _preverr = np.seterr(divide='ignore')
     ret = 1. / v
     ret[np.isinf(ret)] = 0
-    np.seterr(**old_settings)
+    np.seterr(**_preverr)
     return ret
-
-
 
 
 class csr_matrix_plus(scipy.sparse.csr_matrix):
@@ -201,26 +200,49 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
                                self.data.dtype, count=len(self.data))
         return ret
 
-    def multiply(self, other):
+    def multiply(self, other, use_log=False):
         def _logsumexp():
-            _logself = self.astype(np.float128)
-            _logself.data = np.log(_logself.data)
+            lg.debug('using _logsumexp')
+            _lself = self.astype(np.float128)
+            _lself.data = np.log(_lself.data)
 
-            _logother = type(self)(other, dtype=np.float128)
-            _logother.data = np.log(_logother.data)
+            _lother = type(self)(other, dtype=np.float128)
+            _lother.data = np.log(_lother.data)
+            _errmsg = f"incompatible shapes: {_lself.shape} {_lother.shape}"
+            if _lself.shape == _lother.shape:
+                _sum = _lself + _lother
+            elif _lself.ndim == _lother.ndim == 2:
+                if _lother.shape[1] == 1:
+                    lg.debug('_logsumexp with other.shape[1]==1 (SLOW)')
+                    _sum = _lself.copy()
+                    for i in range(_sum.shape[0]):
+                        if _sum.indptr[i] != _sum.indptr[i+1]:
+                            _sum.data[_sum.indptr[i]:_sum.indptr[i+1]] =\
+                                _sum.data[_sum.indptr[i]:_sum.indptr[i+1]] +\
+                                _lother[i,0]
+                else:
+                    raise ValueError(_errmsg)
+            else:
+                raise ValueError(_errmsg)
 
-            _sum = _logself + _logother
-            _exp = np.exp(_sum)
-            return type(self)(_exp)
+            _exp = _sum.copy()
+            _exp.data = np.exp(_exp.data)
+            return type(self)(_exp, dtype=np.float128)
 
         try:
             return type(self)(super().multiply(other))
         except FloatingPointError:
             lg.debug('using extended precision: csr_matrix_plus.multiply')
-            np.seterr(under='warn')
-            longcopy = scipy.sparse.csr_matrix(self).astype(np.float128)
-            ret = type(self)(longcopy.multiply(other))
-            np.seterr(all='raise')
+            _xself = scipy.sparse.csr_matrix(self).astype(np.float128)
+            try:
+                ret = type(self)(_xself.multiply(other))
+            except FloatingPointError:
+                _preverr = np.seterr(under='ignore')
+                if not use_log:
+                    ret = type(self)(_xself.multiply(other))
+                else:
+                    ret = _logsumexp()
+                np.seterr(**_preverr)
             return ret
 
     def colsums(self) -> csr_matrix_plus:
@@ -321,13 +343,18 @@ def bool_inv(m):
 
 
 def divide_extp(num, denom):
-    np.seterr(under='warn')
     if np.ndim(num) == 2 and np.ndim(denom) == 0: # matrix / scalar
         _num_csr = csr_matrix_plus(num)
         _log_num_data = np.log(_num_csr.data)
         _log_denom = np.log(denom)
-        _ret_data = np.exp(_log_num_data - _log_denom)
-        ret = csr_matrix_plus(
+        try:
+            _ret_data = np.exp(_log_num_data - _log_denom)
+        except FloatingPointError:
+            _preverr = np.seterr(under='ignore')
+            _ret_data = np.exp(_log_num_data - _log_denom)
+            np.seterr(**_preverr)
+
+        return csr_matrix_plus(
             (
                 _ret_data,
                 _num_csr.indices,
@@ -336,7 +363,5 @@ def divide_extp(num, denom):
             shape=_num_csr.shape,
             dtype=np.longdouble
         )
-        np.seterr(all='raise')
-        return ret
     raise ValueError('`divide_extp` implemented for dividing matrix by scalar')
 

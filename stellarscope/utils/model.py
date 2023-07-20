@@ -809,8 +809,11 @@ class TelescopeLikelihood(object):
 
         try:
             return _mstep_dp()
-        except FloatingPointError:
+        except (FloatingPointError, RuntimeWarning) as e:
+            if 'underflow encountered in divide' not in e.args:
+                raise StellarscopeError(e.args)
             return _mstep_xp()
+
 
 
     def calculate_lnl(self, z, pi, theta):
