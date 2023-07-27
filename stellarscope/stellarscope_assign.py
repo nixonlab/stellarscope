@@ -26,13 +26,8 @@ from .utils import model
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
 
-from stellarscope import LoadAnnotation
-from stellarscope import LoadAlignments
-from stellarscope import UMIDeduplication
-from stellarscope import FitModel
-from stellarscope import ReassignReads
-from stellarscope import GenerateReport
-from stellarscope import UpdateSam
+from .stages import LoadAnnotation, LoadAlignments, UMIDeduplication, \
+    FitModel, ReassignReads, GenerateReport, UpdateSam
 
 
 __author__ = 'Matthew L. Bendall'

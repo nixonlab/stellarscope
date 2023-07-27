@@ -14,13 +14,8 @@ from . import utils
 from stellarscope import StellarscopeError
 from .stellarscope_assign import StellarscopeAssignOptions
 
-from stellarscope import LoadCheckpoint
-from stellarscope import UMIDeduplication
-from stellarscope import FitModel
-from stellarscope import ReassignReads
-from stellarscope import GenerateReport
-# from stellarscope import UpdateSam
-
+from .stages import LoadCheckpoint, UMIDeduplication, FitModel, \
+    ReassignReads, GenerateReport
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
