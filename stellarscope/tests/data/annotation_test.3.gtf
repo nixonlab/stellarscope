@@ -1,0 +1,12 @@
+# GTF format annotation for a single locus
+# Contains 8 exon features - the first two and the final six overlap, so
+# should be merged to two intervals.
+chr1	rmsk	gene	3801472	3806930	.	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; category "prototype"; intModel "HERVK13-int"; locid "HERVK13-int_0002"; model_cov "4678"; model_pct "57.6";
+chr1	rmsk	exon	3801472	3801948	3926	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "LTR13"; geneRegion "ltr"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "479"; repFamily "ERVK"; repLeft "1"; repStart "-528";
+chr1	rmsk	exon	3801949	3803126	6624	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "8116"; repFamily "ERVK"; repLeft "6948"; repStart "0";
+chr1	rmsk	exon	3803436	3803669	6624	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "6947"; repFamily "ERVK"; repLeft "6733"; repStart "-1169";
+chr1	rmsk	exon	3803659	3805070	3295	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "6092"; repFamily "ERVK"; repLeft "3756"; repStart "-2024";
+chr1	rmsk	exon	3805059	3805231	460	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "4129"; repFamily "ERVK"; repLeft "3965"; repStart "-3987";
+chr1	rmsk	exon	3805219	3805729	807	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "1318"; repFamily "ERVK"; repLeft "730"; repStart "-6798";
+chr1	rmsk	exon	3805727	3805932	1257	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "HERVK13-int"; geneRegion "internal"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "209"; repFamily "ERVK"; repLeft "1"; repStart "-7907";
+chr1	rmsk	exon	3805933	3806930	8224	-	.	gene_id "HML4_1p36.32"; transcript_id "HML4_1p36.32"; locus "HML4_1p36.32"; repName "LTR13"; geneRegion "ltr"; locid "HERVK13-int_0002"; repClass "LTR"; repEnd "1007"; repFamily "ERVK"; repLeft "1"; repStart "0";
