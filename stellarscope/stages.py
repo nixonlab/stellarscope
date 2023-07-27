@@ -5,6 +5,7 @@ import time
 from datetime import timedelta
 from .utils.helpers import fmt_delta
 
+from . import StellarscopeError
 from .annotation import get_annotation_class
 from .annotation import BaseAnnotation
 from .utils.model import Stellarscope, TelescopeLikelihood
@@ -36,6 +37,32 @@ class Stage(object):
         msg = f'{self.stagename} complete in {fmt_delta(_elapsed)}'
         lg.info('#' + msg.center(58, '-') + '#')
         lg.info('')
+
+
+
+class InitStellarscope(Stage):
+    def __init__(self, stagenum: int):
+        self.stagenum = stagenum
+        self.stagename = 'Initialize Stellarscope'
+
+    def run(self, opts: 'StellarscopeAssignOptions'):
+        self.startrun()
+        opts.init_rng()
+        st_obj = Stellarscope(opts)
+        st_obj.load_whitelist()
+
+        if opts.pooling_mode == 'celltype':
+            if opts.celltype_tsv is None:
+                msg = 'celltype_tsv is required for pooling mode "celltype"'
+                raise StellarscopeError(msg)
+            st_obj.load_celltype_file()
+        else:
+            if opts.celltype_tsv:
+                lg.debug('celltype_tsv is ignored for selected pooling modes.')
+
+        lg.info(f'\n{opts}\n')
+        self.endrun()
+        return st_obj
 
 
 class LoadAnnotation(Stage):
@@ -109,7 +136,7 @@ class LoadCheckpoint(Stage):
 
 
 class UMIDeduplication(Stage):
-    def __init__(self, stagenum: int = 2):
+    def __init__(self, stagenum: int):
         self.stagenum = stagenum
         self.stagename = 'UMI deduplication'
 

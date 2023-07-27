@@ -4,7 +4,6 @@ import logging as lg
 import time
 from datetime import timedelta
 from .utils.helpers import fmt_delta
-
 import pkgutil
 
 import numpy as np
@@ -13,7 +12,6 @@ from numpy.random import default_rng
 from . import utils
 from stellarscope import StellarscopeError
 from .stellarscope_assign import StellarscopeAssignOptions
-
 from .stages import LoadCheckpoint, UMIDeduplication, FitModel, \
     ReassignReads, GenerateReport
 
@@ -94,39 +92,8 @@ def run(args):
     ''' Load Stellarscope object '''
     st_obj = LoadCheckpoint(curstage).run(opts)
     curstage += 1
-    # lg.info('Loading Stellarscope object from checkpoint...')
-    # stime = time.perf_counter()
-    # st_obj = Stellarscope.load(opts.checkpoint)
-    #lg.info(f"Loaded object in {fmtmins(time() - stime)}")
 
-    """ Resolve options """
-    # prev_opts = st_obj.opts
-    # opts.resolve_options(prev_opts)
-    # opts.init_rng(prev_opts)
-    # st_obj.opts = opts
-    # lg.info('\n{}\n'.format(opts))
-
-    """ Single pooling mode """
-    # lg.info(f'Using pooling mode(s): {opts.pooling_mode}')
-
-    # if opts.pooling_mode == 'celltype':
-    #     if opts.celltype_tsv:
-    #         if len(st_obj.bcode_ctype_map):
-    #             lg.info(f'Existing celltype assignments discarded.')
-    #         st_obj.load_celltype_file()
-    #         lg.info(f'{len(st_obj.celltypes)} unique celltypes found.')
-    #     else:
-    #         if len(st_obj.bcode_ctype_map):
-    #             lg.info(f'Existing celltype assignments found.')
-    #         else:
-    #             msg = 'celltype_tsv is required for pooling mode "celltype"'
-    #             raise StellarscopeError(msg)
-    # else:
-    #     if opts.celltype_tsv:
-    #         lg.info('celltype_tsv is ignored for selected pooling modes.')
-
-
-    ''' UMI correction '''
+    ''' UMI deduplication '''
     if st_obj.corrected is None:
         lg.info('Checkpoint does not contain UMI corrected scores.')
         if opts.ignore_umi:
@@ -134,17 +101,13 @@ def run(args):
         else:
             UMIDeduplication(curstage).run(opts, st_obj)
             curstage += 1
-            # stime = time()
-            # st_obj.dedup_umi()
-            # lg.info("UMI deduplication in {}".format(fmtmins(time() - stime)))
-            # st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
     else:
-        lg.info('Checkpoint contains UMI corrected scores.')
         if opts.ignore_umi:
-            lg.info('Ignoring UMI corrected scores (option --ignore_umi)')
+            lg.warning('Checkpoint contains UMI corrected scores.')
+            lg.warning('Ignoring UMI corrected scores (option --ignore_umi)')
             st_obj.corrected = None
         else:
-            lg.info('Using UMI corrected scores from checkpoint')
+            lg.debug('Using UMI corrected scores from checkpoint')
 
     ''' Fit model '''
     if opts.skip_em:
@@ -155,35 +118,16 @@ def run(args):
     else:
         st_model = FitModel(curstage).run(opts, st_obj)
         curstage += 1
-    # lg.info('Fitting model...')
-    # stime = time()
-    # st_model, poolinfo = st_obj.fit_pooling_model()
-    # lg.info(f'  Total lnL            : {st_model.lnl}')
-    # lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
-    # lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
-    # lg.info(f'  total obs: {poolinfo.total_obs()}')
-    # lg.info(f'  total params: {poolinfo.total_params()}')
-    # lg.info(f'  BIC: {poolinfo.BIC()}')
-    # lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
     ''' Reassign reads '''
     ReassignReads(curstage).run(st_obj, st_model)
     curstage += 1
-    # ''' Reassign reads '''
-    # lg.info("Reassigning reads...")
-    # stime = time()
-    # st_obj.reassign(st_model)
-    # lg.info("Read reassignment complete in %s" % fmtmins(time() - stime))
 
     ''' Generate report '''
     GenerateReport(curstage).run(st_obj, st_model)
     curstage += 1
-    # ''' Generate report '''
-    # lg.info("Generating Report...")
-    # stime = time()
-    # st_obj.output_report(st_model)
-    # lg.info("Report generated in %s" % fmtmins(time() - stime))
 
+    ''' Final '''
     st_obj.save(opts.outfile_path('checkpoint.final.pickle'))
     _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
     lg.info(f'stellarscope resume complete in {fmt_delta(_elapsed)}')
