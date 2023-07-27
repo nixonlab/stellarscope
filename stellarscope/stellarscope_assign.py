@@ -241,20 +241,6 @@ def run(args):
     st_obj = Stellarscope(opts)
     st_obj.load_whitelist()
 
-
-    """ Multiple pooling modes
-    lg.info('Using pooling mode(s): %s' % ', '.join(opts.pooling_mode))
-
-    if 'celltype' in opts.pooling_mode and opts.celltype_tsv is None:
-        msg = 'celltype_tsv is required for pooling mode "celltype"'
-        raise StellarscopeError(msg)
-    if 'celltype' not in opts.pooling_mode and opts.celltype_tsv:
-        lg.info('celltype_tsv is ignored for selected pooling modes.')
-    """
-
-    """ Single pooling mode """
-    lg.info(f'Using pooling mode(s): {opts.pooling_mode}')
-
     if opts.pooling_mode == 'celltype':
         if opts.celltype_tsv is None:
             msg = 'celltype_tsv is required for pooling mode "celltype"'
@@ -264,19 +250,20 @@ def run(args):
         if opts.celltype_tsv:
             lg.info('celltype_tsv is ignored for selected pooling modes.')
 
-    ''' Load annotation '''
-    annot = LoadAnnotation().run(opts)
-    # Annotation = get_annotation_class(opts.annotation_class)
-    # Annotation = _StrandedAnnotationIntervalTree
-    # lg.info('Loading annotation...')
-    # stime = time()
-    # annot = Annotation(opts.gtffile, opts.attribute, opts.stranded_mode)
-    # lg.info("Loaded annotation in {}".format(fmtmins(time() - stime)))
-    # lg.info('Loaded {} features.'.format(len(annot.loci)))
-    # annot.save(opts.outfile_path('test_annotation.p'))
+
+    curstage = 0
+
+    ''' Load annotation'''
+    annot = LoadAnnotation(0).run(opts)
+    curstage += 1
 
     ''' Load alignments '''
-    LoadAlignments(stagenum = 1).run(opts, st_obj, annot)
+    LoadAlignments(curstage).run(opts, st_obj, annot)
+    curstage += 1
+
+    ''' Free up memory used by annotation '''
+    annot = None
+    lg.info(f'garbage: {gc.collect():d}')
 
     # msg = 'Stage 1: Load alignments'
     # lg.info('#' + msg.center(58, '-') + '#')
@@ -301,14 +288,12 @@ def run(args):
     #     dump_data(opts.outfile_path('00-bcode_ridx_map'), st_obj.bcode_ridx_map)
     #     dump_data(opts.outfile_path('00-whitelist'), st_obj.whitelist)
 
-    ''' Free up memory used by annotation '''
-    annot = None
-    lg.debug('garbage: {:d}'.format(gc.collect()))
-
+    ''' UMI deduplication '''
     if opts.ignore_umi:
         lg.info('Skipping UMI deduplication...')
     else:
-        UMIDeduplication(stagenum = 2).run(opts, st_obj)
+        UMIDeduplication(curstage).run(opts, st_obj)
+        curstage += 1
         # msg = 'Stage 2: UMI deduplication'
         # lg.info('#' + msg.center(58,'-') + '#')
         # stime = time()
@@ -328,19 +313,21 @@ def run(args):
     #     dump_data(opts.outfile_path('01-bcode_ridx_map'), st_obj.bcode_ridx_map)
     #     dump_data(opts.outfile_path('01-whitelist'), st_obj.whitelist)
 
+    ''' Fit model '''
     if opts.skip_em:
         lg.info("Skipping EM...")
         lg.info("stellarscope assign complete (%s)" % fmtmins(time()-total_time))
         return
 
-    if opts.old_report:
-        lg.info('Fitting model (fit_telescope_model)')
-        stime = time()
-        st_obj.barcodes = st_obj.bcode_ridx_map.keys()
-        ts_model = fit_telescope_model(st_obj, opts)
-        lg.info("Fitting completed in %s" % fmtmins(time() - stime))
+    # if opts.old_report:
+    #     lg.info('Fitting model (fit_telescope_model)')
+    #     stime = time()
+    #     st_obj.barcodes = st_obj.bcode_ridx_map.keys()
+    #     ts_model = fit_telescope_model(st_obj, opts)
+    #     lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
-    st_model = FitModel(stagenum = 3).run(opts, st_obj)
+    st_model = FitModel(curstage).run(opts, st_obj)
+    curstage += 1
     # msg = f'Stage 3: Fitting model (pooling mode: {opts.pooling_mode})'
     # lg.info('#' + msg.center(58,'-') + '#')
     # stime = time()
@@ -366,20 +353,24 @@ def run(args):
     #     dump_data(opts.outfile_path('02-whitelist'), st_obj.whitelist)
 
     # Output final report
-    if opts.old_report:
-        lg.info("Generating Old Report...")
-        stime = time()
-        st_obj.output_report_old(ts_model,
-                                 opts.outfile_path('run_stats_old.tsv'),
-                                 opts.outfile_path('TE_counts_old.mtx'),
-                                 opts.outfile_path('barcodes_old.tsv'),
-                                 opts.outfile_path('features_old.tsv')
-                                 )
-        lg.info("Old report generated in %s" % fmtmins(time() - stime))
+    # if opts.old_report:
+    #     lg.info("Generating Old Report...")
+    #     stime = time()
+    #     st_obj.output_report_old(ts_model,
+    #                              opts.outfile_path('run_stats_old.tsv'),
+    #                              opts.outfile_path('TE_counts_old.mtx'),
+    #                              opts.outfile_path('barcodes_old.tsv'),
+    #                              opts.outfile_path('features_old.tsv')
+    #                              )
+    #     lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
     ''' Reassign reads '''
-    ReassignReads(4).run(st_obj, st_model)
-    GenerateReport(5).run(st_obj, st_model)
+    ReassignReads(curstage).run(st_obj, st_model)
+    curstage += 1
+
+    ''' Generate report '''
+    GenerateReport(curstage).run(st_obj, st_model)
+    curstage += 1
     # lg.info("Reassigning reads...")
     # stime = time()
     # st_obj.reassign(st_model)
@@ -390,8 +381,10 @@ def run(args):
     # st_obj.output_report(st_model)
     # lg.info("Report generated in %s" % fmtmins(time() - stime))
 
+    ''' Update SAM'''
     if opts.updated_sam:
-        UpdateSam(6).run(opts, st_obj, st_model)
+        UpdateSam(curstage).run(opts, st_obj, st_model)
+        curstage += 1
         # lg.info("Creating updated SAM file...")
         # stime = time()
         # st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))

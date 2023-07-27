@@ -55,7 +55,7 @@ class Stage(object):
 from .annotation import get_annotation_class
 
 class LoadAnnotation(Stage):
-    def __init__(self):
+    def __init__(self, stagenum: int):
         self.stagenum = 0
         self.stagename = 'Load annotation'
 
@@ -72,7 +72,7 @@ class LoadAnnotation(Stage):
 from .utils.model import Stellarscope, TelescopeLikelihood
 from .annotation import BaseAnnotation
 class LoadAlignments(Stage):
-    def __init__(self, stagenum: int = 1):
+    def __init__(self, stagenum: int):
         self.stagenum = stagenum
         self.stagename = 'Load alignment'
 
