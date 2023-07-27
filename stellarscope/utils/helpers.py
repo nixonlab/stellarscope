@@ -73,6 +73,11 @@ def format_minutes(seconds):
     return '%d minutes and %d secs' % (mins,secs)
 
 
+def fmt_delta(td):
+    s = td.total_seconds()
+    return f'{int(s // 60)} minutes and {round(s % 60)} seconds'
+
+
 def merge_blocks(ivs, dist=0):
     """ Merge blocks
 

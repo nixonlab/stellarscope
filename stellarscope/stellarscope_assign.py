@@ -29,13 +29,17 @@ from .utils.model import TelescopeLikelihood
 from .utils.model import Stellarscope
 from .utils import model
 
-from .utils.annotation import get_annotation_class
-from .utils._annotation_intervaltree import _StrandedAnnotationIntervalTree
+# from .utils.annotation import get_annotation_class
+# from .utils._annotation_intervaltree import _StrandedAnnotationIntervalTree
 from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
 
+from stellarscope import LoadAnnotation
+
+
+
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2021 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
 
 def permute_csr_rows(M, row_order):
@@ -256,14 +260,14 @@ def run(args):
             lg.info('celltype_tsv is ignored for selected pooling modes.')
 
     ''' Load annotation '''
-    Annotation = get_annotation_class(opts.annotation_class)
-    Annotation = _StrandedAnnotationIntervalTree
-    lg.info('Loading annotation...')
-    stime = time()
-    annot = Annotation(opts.gtffile, opts.attribute, opts.stranded_mode)
-    lg.info("Loaded annotation in {}".format(fmtmins(time() - stime)))
-    lg.info('Loaded {} features.'.format(len(annot.loci)))
-
+    annot = LoadAnnotation().run(opts)
+    # Annotation = get_annotation_class(opts.annotation_class)
+    # Annotation = _StrandedAnnotationIntervalTree
+    # lg.info('Loading annotation...')
+    # stime = time()
+    # annot = Annotation(opts.gtffile, opts.attribute, opts.stranded_mode)
+    # lg.info("Loaded annotation in {}".format(fmtmins(time() - stime)))
+    # lg.info('Loaded {} features.'.format(len(annot.loci)))
     # annot.save(opts.outfile_path('test_annotation.p'))
 
     ''' Load alignments '''

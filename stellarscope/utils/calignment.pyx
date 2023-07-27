@@ -51,6 +51,23 @@ cdef class AlignedPair:
             self.r2.flag = (self.r2.flag ^ (self.r2.flag & b))
         assert (self.r1.flag & b) == 0
 
+    def fragstrand(self, stranded_mode: str):
+        if not self.is_paired:
+            if stranded_mode == 'F':
+                return '-' if self.r1.is_reverse else '+'
+            elif stranded_mode == 'R':
+                return '+' if self.r1.is_reverse else '-'
+            else:
+                raise ValueError('Stranded mode must be "F" or "R" for single-end reads')
+        else:
+            if stranded_mode == 'RF':
+                return '-' if self.r2.is_reverse else '+'
+            elif stranded_mode == 'FR':
+                return '-' if self.r1.is_reverse else '+'
+            else:
+                raise ValueError('Stranded mode must be "RF" or "FR" for paired-end reads')
+
+
     @property
     def numreads(self):
         return 1 if self.r2 is None else 2

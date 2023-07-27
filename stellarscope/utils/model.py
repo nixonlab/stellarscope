@@ -44,7 +44,7 @@ from .helpers import str2int, region_iter, phred
 from . import alignment
 from .alignment import get_tag_alignments
 from .alignment import CODES as ALNCODES
-from . import annotation
+from stellarscope import annotation
 from . import BIG_INT, USE_EXTENDED
 
 __author__ = 'Matthew L. Bendall, Matthew Greenig'
@@ -1108,21 +1108,17 @@ class Assigner:
 
     def assign_func(self):
         def _assign_pair_threshold(pair):
-            blocks = pair.refblocks
-            if pair.r1_is_reversed:
-                if pair.is_paired:
-                    frag_strand = '+' if self.stranded_mode[-1] == 'F' else '-'
-                else:
-                    frag_strand = '-' if self.stranded_mode[0] == 'F' else '+'
+            _ref = pair.ref_name
+            _blocks = pair.refblocks
+            if self.stranded_mode is None:
+                f = self.annotation.intersect_blocks(_ref, _blocks)
             else:
-                if pair.is_paired:
-                    frag_strand = '-' if self.stranded_mode[-1] == 'F' else '+'
-                else:
-                    frag_strand = '+' if self.stranded_mode[0] == 'F' else '-'
-            f = self.annotation.intersect_blocks(pair.ref_name, blocks,
-                                                 frag_strand)
+                _strand = pair.fragstrand(self.stranded_mode)
+                f = self.annotation.intersect_blocks((_ref, _strand), _blocks)
+
             if not f:
                 return self.no_feature_key
+
             # Calculate the percentage of fragment mapped
             fname, overlap = f.most_common()[0]
             if overlap > pair.alnlen * self.overlap_threshold:
@@ -1623,15 +1619,8 @@ class Stellarscope(Telescope):
 
         ''' Load sequential '''
         _nfkey = self.opts.no_feature_key
-
-        # mappings is a list of tuples
-        # each mapping is (
         _mappings = []
-        assign = Assigner(annotation, self.opts).assign_func()
-
-        # if not self.single_cell:
-        #     raise StellarscopeError('Stellarscope object is not single cell')
-        # _all_read_barcodes = []
+        assign_func = Assigner(annotation, self.opts).assign_func()
 
         # Initialize variables for function
         alninfo = OrderedDict()
@@ -1644,9 +1633,6 @@ class Stellarscope(Telescope):
         alninfo['feat_A'] = 0       # ambiguously aligns overlapping annotation
         alninfo['minAS'] = BIG_INT  # minimum alignment score
         alninfo['maxAS'] = -BIG_INT # maximum alignment score
-
-        # _minAS = BIG_INT
-        # _maxAS = -BIG_INT
 
         _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
@@ -1706,7 +1692,7 @@ class Stellarscope(Telescope):
                 alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
 
                 ''' Check whether fragment overlaps annotation '''
-                overlap_feats = list(map(assign, _mapped))
+                overlap_feats = list(map(assign_func, _mapped))
                 has_overlap = any(f != _nfkey for f in overlap_feats)
 
                 ''' Fragment has no overlap, skip '''

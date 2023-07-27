@@ -32,9 +32,15 @@
     - attribute:
         default: locus
         help: |
-            GTF attribute that defines a transposable element locus. GTF 
-            features that share the same value for `--attribute` will be
-            considered as part of the same locus.
+            GTF attribute to be used as feature ID. Typically a "feature" is 
+            a single transposable element locus. GTF feature rows that share 
+            the same value for `--attribute` will be considered as part of the
+            same locus.
+    - feature_type:
+          default: exon
+          help: |
+              Feature type (3rd column in GTF file) to be used, all features 
+              of other types are ignored.
     - no_feature_key:
         default: __no_feature
         help: |
@@ -211,14 +217,12 @@
             differences are TBD.
     - stranded_mode:
         type: str
-        default: None
         choices:
-            - None
             - RF
             - R
             - FR
             - F
-        help: >
+        help: |
               Options for considering feature strand when assigning reads.
               If None, for each feature in the annotation, returns counts for 
               the positive strand and negative strand. If not None, specifies 
@@ -226,13 +230,13 @@
               read 2 forward strand) and single end reads (F - forward strand).
     - ignore_umi:
         action: store_true
-        help: >
+        help: |
               Do not perform UMI deduplication prior to model fitting. Model 
               fitting may be biased. Final counts will include UMI duplicates 
               if `--umi_counts` is unset.
     - umi_counts:
         action: store_true
-        help: >
+        help: |
               Count unique UMIs per locus instead of reads. 
               If `--ignore_umi` is unset, performance is decreased and has no 
               effect on the final counts, since deduplication was performed

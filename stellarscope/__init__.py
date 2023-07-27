@@ -24,3 +24,45 @@ class AlignmentValidationError(StellarscopeError):
                 ret += aln.r2.to_string() + '\n'
 
         return ret
+
+import logging as lg
+import time
+from datetime import timedelta
+from .utils.helpers import fmt_delta
+
+class Stage(object):
+    stagenum: int
+    stagename: str
+    start_time: float
+    end_time: float
+    def __init__(self):
+        self.stagenum = 0
+        self.stagename = 'Abstract Base Stage'
+        self.stime = -1
+        self.etime = -1
+
+    def startrun(self):
+        msg = f'Stage {self.stagenum}: {self.stagename}'
+        lg.info('#' + msg.center(58, '-') + '#')
+        self.stime = time.perf_counter()
+    def endrun(self):
+        self.etime = time.perf_counter()
+        _elapsed = timedelta(seconds=self.etime-self.stime)
+        msg = f'Completed {self.stagename} in {fmt_delta(_elapsed)}'
+        lg.info('#' + msg.center(58, '-') + '#')
+
+from .annotation import get_annotation_class
+
+class LoadAnnotation(Stage):
+    def __init__(self):
+        self.stagenum = 0
+        self.stagename = 'Load annotation'
+    def run(self, opts):
+        self.startrun()
+        Annotation = get_annotation_class(opts.annotation_class, opts.stranded_mode)
+        annot = Annotation(opts.gtffile, opts.attribute, opts.feature_type)
+        print(annot)
+        # lg.info(f'  Loaded {len(annot.loci)} loci')
+        # lg.info(f'  Loaded {len(annot.loci)} loci')
+        self.endrun()
+        return annot
