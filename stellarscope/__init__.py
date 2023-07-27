@@ -48,8 +48,9 @@ class Stage(object):
     def endrun(self):
         self.etime = time.perf_counter()
         _elapsed = timedelta(seconds=self.etime-self.stime)
-        msg = f'Completed {self.stagename} in {fmt_delta(_elapsed)}'
+        msg = f'{self.stagename} complete in {fmt_delta(_elapsed)}'
         lg.info('#' + msg.center(58, '-') + '#')
+        lg.info('')
 
 from .annotation import get_annotation_class
 
@@ -57,12 +58,96 @@ class LoadAnnotation(Stage):
     def __init__(self):
         self.stagenum = 0
         self.stagename = 'Load annotation'
+
+
     def run(self, opts):
         self.startrun()
         Annotation = get_annotation_class(opts.annotation_class, opts.stranded_mode)
         annot = Annotation(opts.gtffile, opts.attribute, opts.feature_type)
-        print(annot)
         # lg.info(f'  Loaded {len(annot.loci)} loci')
         # lg.info(f'  Loaded {len(annot.loci)} loci')
         self.endrun()
         return annot
+
+from .utils.model import Stellarscope, TelescopeLikelihood
+from .annotation import BaseAnnotation
+class LoadAlignments(Stage):
+    def __init__(self, stagenum: int = 1):
+        self.stagenum = stagenum
+        self.stagename = 'Load alignment'
+
+
+    def run(self, opts, st_obj: Stellarscope, annot: BaseAnnotation):
+        self.startrun()
+        st_obj.load_alignment(annot)
+        st_obj.print_summary(lg.INFO)
+        self.endrun()
+        st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
+        return
+
+
+class UMIDeduplication(Stage):
+    def __init__(self, stagenum: int = 2):
+        self.stagenum = stagenum
+        self.stagename = 'UMI deduplication'
+
+
+    def run(self, opts, st_obj: Stellarscope):
+        self.startrun()
+        st_obj.dedup_umi()
+        self.endrun()
+        st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
+        return
+
+class FitModel(Stage):
+    def __init__(self, stagenum: int = 3):
+        self.stagenum = stagenum
+        self.stagename = 'Fitting model'
+
+
+    def run(self, opts, st_obj: Stellarscope):
+        self.startrun()
+        st_model, poolinfo = st_obj.fit_pooling_model()
+        lg.info(f'  Total lnL            : {st_model.lnl}')
+        lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
+        lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
+        lg.info(f'  total obs: {poolinfo.total_obs()}')
+        lg.info(f'  total params: {poolinfo.total_params()}')
+        lg.info(f'  BIC: {poolinfo.BIC()}')
+        self.endrun()
+        return st_model
+
+class ReassignReads(Stage):
+    def __init__(self, stagenum: int):
+        self.stagenum = stagenum
+        self.stagename = 'Read reassignment'
+
+
+    def run(self, st_obj: Stellarscope, st_model: TelescopeLikelihood):
+        self.startrun()
+        st_obj.reassign(st_model)
+        self.endrun()
+        return
+
+class GenerateReport(Stage):
+    def __init__(self, stagenum: int):
+        self.stagenum = stagenum
+        self.stagename = 'Generate report'
+
+
+    def run(self, st_obj: Stellarscope, st_model: TelescopeLikelihood):
+        self.startrun()
+        st_obj.output_report(st_model)
+        self.endrun()
+        return
+
+class UpdateSam(Stage):
+    def __init__(self, stagenum: int):
+        self.stagenum = stagenum
+        self.stagename = 'Update BAM file'
+
+    def run(self, opts, st_obj: Stellarscope, st_model: TelescopeLikelihood):
+        self.startrun()
+        st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
+        self.endrun()
+        return

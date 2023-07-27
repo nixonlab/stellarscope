@@ -35,7 +35,12 @@ from .utils.sparse_plus import csr_matrix_plus as csr_matrix
 from .utils.sparse_plus import row_identity_matrix
 
 from stellarscope import LoadAnnotation
-
+from stellarscope import LoadAlignments
+from stellarscope import UMIDeduplication
+from stellarscope import FitModel
+from stellarscope import ReassignReads
+from stellarscope import GenerateReport
+from stellarscope import UpdateSam
 
 
 __author__ = 'Matthew L. Bendall'
@@ -271,19 +276,21 @@ def run(args):
     # annot.save(opts.outfile_path('test_annotation.p'))
 
     ''' Load alignments '''
-    msg = 'Stage 1: Load alignments'
-    lg.info('#' + msg.center(58, '-') + '#')
-    stime = time()
-    st_obj.load_alignment(annot)
+    LoadAlignments(stagenum = 1).run(opts, st_obj, annot)
 
-    ''' Print alignment summary '''
-    st_obj.print_summary(lg.INFO)
-
-    msg = f"Loaded alignment in {fmtmins(time() - stime)}"
-    lg.info('#' + msg.center(58, '-') + '#')
-
-    ''' Save object checkpoint '''
-    st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
+    # msg = 'Stage 1: Load alignments'
+    # lg.info('#' + msg.center(58, '-') + '#')
+    # stime = time()
+    # st_obj.load_alignment(annot)
+    #
+    # ''' Print alignment summary '''
+    # st_obj.print_summary(lg.INFO)
+    #
+    # msg = f"Loaded alignment in {fmtmins(time() - stime)}"
+    # lg.info('#' + msg.center(58, '-') + '#')
+    #
+    # ''' Save object checkpoint '''
+    # st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
 
     # if opts.devmode:
     #     dump_data(opts.outfile_path('00-uncorrected'), st_obj.raw_scores)
@@ -301,14 +308,15 @@ def run(args):
     if opts.ignore_umi:
         lg.info('Skipping UMI deduplication...')
     else:
-        msg = 'Stage 2: UMI deduplication'
-        lg.info('#' + msg.center(58,'-') + '#')
-        stime = time()
-        st_obj.dedup_umi()
-        msg = f"UMI deduplication completed in {fmtmins(time() - stime)}"
-        lg.info('#' + msg.center(58,'-') + '#')
-        lg.info('')
-        st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
+        UMIDeduplication(stagenum = 2).run(opts, st_obj)
+        # msg = 'Stage 2: UMI deduplication'
+        # lg.info('#' + msg.center(58,'-') + '#')
+        # stime = time()
+        # st_obj.dedup_umi()
+        # msg = f"UMI deduplication completed in {fmtmins(time() - stime)}"
+        # lg.info('#' + msg.center(58,'-') + '#')
+        # lg.info('')
+        # st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
 
     # if opts.devmode:
     #     dump_data(opts.outfile_path('01-uncorrected'), st_obj.raw_scores)
@@ -332,19 +340,20 @@ def run(args):
         ts_model = fit_telescope_model(st_obj, opts)
         lg.info("Fitting completed in %s" % fmtmins(time() - stime))
 
-    msg = f'Stage 3: Fitting model (pooling mode: {opts.pooling_mode})'
-    lg.info('#' + msg.center(58,'-') + '#')
-    stime = time()
-    st_model, poolinfo = st_obj.fit_pooling_model()
-    lg.info(f'  Total lnL            : {st_model.lnl}')
-    lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
-    lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
-    lg.info(f'  total obs: {poolinfo.total_obs()}')
-    lg.info(f'  total params: {poolinfo.total_params()}')
-    lg.info(f'  BIC: {poolinfo.BIC()}')
-    msg = f"Fitting completed in {fmtmins(time() - stime)}"
-    lg.info('#' + msg.center(58, '-') + '#')
-    lg.info('')
+    st_model = FitModel(stagenum = 3).run(opts, st_obj)
+    # msg = f'Stage 3: Fitting model (pooling mode: {opts.pooling_mode})'
+    # lg.info('#' + msg.center(58,'-') + '#')
+    # stime = time()
+    # st_model, poolinfo = st_obj.fit_pooling_model()
+    # lg.info(f'  Total lnL            : {st_model.lnl}')
+    # lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
+    # lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
+    # lg.info(f'  total obs: {poolinfo.total_obs()}')
+    # lg.info(f'  total params: {poolinfo.total_params()}')
+    # lg.info(f'  BIC: {poolinfo.BIC()}')
+    # msg = f"Fitting completed in {fmtmins(time() - stime)}"
+    # lg.info('#' + msg.center(58, '-') + '#')
+    # lg.info('')
 
     # if opts.devmode:
     #     dump_data(opts.outfile_path('02-uncorrected'), st_obj.raw_scores)
@@ -369,21 +378,24 @@ def run(args):
         lg.info("Old report generated in %s" % fmtmins(time() - stime))
 
     ''' Reassign reads '''
-    lg.info("Reassigning reads...")
-    stime = time()
-    st_obj.reassign(st_model)
-    lg.info("Read reassignment complete in %s" % fmtmins(time() - stime))
+    ReassignReads(4).run(st_obj, st_model)
+    GenerateReport(5).run(st_obj, st_model)
+    # lg.info("Reassigning reads...")
+    # stime = time()
+    # st_obj.reassign(st_model)
+    # lg.info("Read reassignment complete in %s" % fmtmins(time() - stime))
 
-    lg.info("Generating Report...")
-    stime = time()
-    st_obj.output_report(st_model)
-    lg.info("Report generated in %s" % fmtmins(time() - stime))
+    # lg.info("Generating Report...")
+    # stime = time()
+    # st_obj.output_report(st_model)
+    # lg.info("Report generated in %s" % fmtmins(time() - stime))
 
     if opts.updated_sam:
-        lg.info("Creating updated SAM file...")
-        stime = time()
-        st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
-        lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
+        UpdateSam(6).run(opts, st_obj, st_model)
+        # lg.info("Creating updated SAM file...")
+        # stime = time()
+        # st_obj.update_sam(st_model, opts.outfile_path('updated.bam'))
+        # lg.info("Updated SAM file created in %s" % fmtmins(time() - stime))
 
     st_obj.save(opts.outfile_path('checkpoint.final.pickle'))
     lg.info("stellarscope assign complete (%s)" % fmtmins(time() - total_time))
