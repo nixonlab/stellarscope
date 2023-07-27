@@ -48,12 +48,6 @@
         help: |
             Run in development mode. Outputs noisy debugging messages and 
             writes intermediate data structures to file.
-    - old_report:
-        action: store_true
-        help: |
-            Generate old reports in addition to new report. The old report
-            uses UMI deduplication during counting instead of before EM and
-            may not include all whitelist cell barcodes in output.
 - Run Modes:
     - pooling_mode:
         type: str

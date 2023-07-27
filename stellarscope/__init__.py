@@ -54,9 +54,11 @@ class Stage(object):
 
 from .annotation import get_annotation_class
 
+
+
 class LoadAnnotation(Stage):
     def __init__(self, stagenum: int):
-        self.stagenum = 0
+        self.stagenum = stagenum
         self.stagename = 'Load annotation'
 
 
@@ -85,6 +87,45 @@ class LoadAlignments(Stage):
         st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
         return
 
+
+class LoadCheckpoint(Stage):
+    def __init__(self, stagenum: int):
+        self.stagenum = stagenum
+        self.stagename = 'Load checkpoint'
+
+    def run(self, opts: 'StellarscopeResumeOptions'):
+        self.startrun()
+        st_obj = Stellarscope.load(opts.checkpoint)
+        prev_opts = st_obj.opts
+        opts.resolve_options(prev_opts)
+        opts.init_rng(prev_opts)
+        st_obj.opts = opts
+
+        ''' Load celltype assignments from file or checkpoint '''
+        if opts.pooling_mode == 'celltype':
+            if opts.celltype_tsv:
+                if len(st_obj.bcode_ctype_map):
+                    msg1 = 'Celltype assignments were found in checkpoint '
+                    msg1 += 'and provided by --celltype_tsv'
+                    msg2 = 'Existing assignments (from checkpoint) will be '
+                    msg2 += 'discarded.'
+                    lg.warning(msg1)
+                    lg.warning(msg2)
+                st_obj.load_celltype_file()
+                lg.info(f'{len(st_obj.celltypes)} unique celltypes found.')
+            else:
+                if len(st_obj.bcode_ctype_map):
+                    lg.info(f'Existing celltype assignments found.')
+                else:
+                    msg = 'celltype_tsv is required for pooling mode "celltype"'
+                    raise StellarscopeError(msg)
+        else:
+            if opts.celltype_tsv:
+                lg.debug('NOTE: celltype_tsv ignored for {opts.pooling_mode}.')
+
+        lg.info(f'\n{opts}\n')
+        self.endrun()
+        return st_obj
 
 class UMIDeduplication(Stage):
     def __init__(self, stagenum: int = 2):
