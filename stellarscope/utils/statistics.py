@@ -65,24 +65,82 @@ class PoolInfo(GenericInfo):
     """
     nmodels: int
     models_info = dict[str, FitInfo]
+    _total_params: Optional[int]
+    _total_obs: Optional[int]
+    _total_lnl: Optional[np.floating]
 
     def __init__(self):
         self.nmodels = 0
         self.models_info = {}
+        self._total_params = None
+        self._total_obs = None
+        self._total_lnl = None
 
+    @property
     def fitted_models(self) -> int:
         return len(self.models_info)
+
+
+    @property
     def total_lnl(self) -> float:
-        return sum(v.final_lnl for v in self.models_info.values())
+        if self._total_lnl is None:
+            self._total_lnl = np.float128(0.0)
+            for i, fitinfo in self.models_info.items():
+                self._total_lnl += fitinfo.final_lnl
+        return self._total_lnl
 
+    @property
     def total_obs(self) -> int:
-        return sum(v.nobs for v in self.models_info.values())
+        if self._total_obs is None:
+            self._total_obs = 0
+            for i, fitinfo in self.models_info.items():
+                self._total_obs += fitinfo.nobs
+        return self._total_obs
 
+    @property
     def total_params(self) -> int:
-        return sum((v.nparams * v.nfeats) for v in self.models_info.values())
+        if self._total_params is None:
+            self._total_params = 0
+            for i, fitinfo in self.models_info.items():
+                self._total_params += fitinfo.nparams * fitinfo.nfeats
+        return self._total_params
 
-    def BIC(self):
-        return self.total_params() * np.log(self.total_obs()) - (2 * self.total_lnl())
+    def AIC(self) -> np.floating:
+        """ Calculate Akaike Information Criterion
+
+        The AIC is defined as:
+        .. math::
+            {\displaystyle \mathrm {AIC} \,=\,2k-2\ln({\hat {L}})}
+
+        Returns
+        -------
+        np.floating
+            Akaike information criterion for pooling model
+        """
+        return 2 * self.total_params - (2 * self.total_lnl)
+
+    def BIC(self) -> np.floating:
+        """ Calculate Bayesian Information Criterion
+
+        The BIC is defined as:
+        .. math::
+            {\displaystyle \mathrm {BIC} =k\ln(n)-2\ln({\widehat {L}}).\ }
+
+        Returns
+        -------
+        np.floating
+            Baysian information criterion for pooling model
+        """
+        return \
+            self.total_params * np.log(self.total_obs) - (2 * self.total_lnl)
+
+    def log(self, loglev=lg.INFO):
+        lg.log(loglev, f'Complete data log-likelihood (lnL): {self.total_lnl}')
+        lg.log(loglev, f'  Number of models estimated: {self.fitted_models}')
+        lg.log(loglev, f'  Total observations: {self.total_obs}')
+        lg.log(loglev, f'  Total parameters estimated: {self.total_params}')
+        lg.log(loglev, f'    AIC: {self.AIC()}')
+        lg.log(loglev, f'    BIC: {self.BIC()}')
 
 
 class ReassignInfo(GenericInfo):
@@ -111,25 +169,21 @@ class ReassignInfo(GenericInfo):
         if _m == 'total_hits':
             ret.append(f'{prefix}{self.assigned} total alignments.')
         elif _m == 'initial_unique':
-            ret.append(f'{prefix}{self.assigned} uniquely mapped: {self.assigned}')
+            ret.append(f'{prefix}{self.assigned} uniquely mapped.')
         else:
             ret.append(f'{prefix}{self.assigned} assigned.')
 
         # ambiguous
-        if _m == 'best_exclude':
-            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (excluded).')
-        elif _m == 'best_conf':
-            ret.append(f'{prefix}{self.ambiguous} low confidence (excluded).')
-        elif _m == 'best_random':
-            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (randomly assigned).')
-        elif _m == 'best_average':
-            ret.append(f'{prefix}{self.ambiguous} remain ambiguous (divided evenly).')
-        elif _m == 'initial_unique':
-            ret.append(f'{prefix}{self.ambiguous} are ambiguous (discarded).')
-        elif _m == 'initial_random':
-            ret.append(f'{prefix}{self.ambiguous} are ambiguous (randomly assigned).')
-        elif _m == 'total_hits':
-            ret.append(f'{prefix}{self.ambiguous} had multiple alignments.')
+        _explain = {
+            'best_exclude': 'remain ambiguous -> excluded',
+            'best_conf': 'are low confidence -> excluded',
+            'best_random': 'remain ambiguous -> randomly assigned',
+            'best_average': 'remain ambiguous -> divided evenly',
+            'initial_unique': 'were initially ambiguous -> discarded',
+            'initial_random': 'were initially ambiguous -> randomly assigned',
+            'total_hits': 'initially had multiple alignments',
+        }
+        ret.append(f'{prefix}{self.ambiguous} reads {_explain[_m]}.')
 
         # unaligned
         if self.unaligned is not None:
@@ -137,13 +191,11 @@ class ReassignInfo(GenericInfo):
 
         return ret
 
-    def log(self, indent=2, loglev=lg.INFO):
-        header = " "*indent + f'Reassignment using {self.reassign_mode}'
+    def log(self, loglev=lg.INFO):
+        header = f'Reassignment using {self.reassign_mode}'
         lg.log(loglev, header)
         for _l in self.format(False):
-            if indent:
-                _l = " "*(indent*2) + _l
-            lg.log(loglev, _l)
+            lg.log(loglev, f'  {_l}')
 
 
 class UMIInfo(GenericInfo):
@@ -197,10 +249,10 @@ class UMIInfo(GenericInfo):
         return
 
     def prelog(self, loglev=lg.INFO):
-        lg.log(loglev, f'  Number of BC+UMI pairs: {self.num_umi}')
-        lg.log(loglev, f'    unique UMIs: {self.uni_umi}')
-        lg.log(loglev, f'    duplicated UMIs: {self.dup_umi}')
-        lg.log(loglev, f'    max reads per UMI: {self.max_rpu}')
+        lg.log(loglev, f'Number of BC+UMI pairs: {self.num_umi}')
+        lg.log(loglev, f'  unique UMIs: {self.uni_umi}')
+        lg.log(loglev, f'  duplicated UMIs: {self.dup_umi}')
+        lg.log(loglev, f'  max reads per UMI: {self.max_rpu}')
         for b_i, v in enumerate(self.rpu_hist):
             bs, be = self.rpu_bins[b_i], self.rpu_bins[b_i + 1]
             if be == self.rpu_bins[-1]:
@@ -209,20 +261,17 @@ class UMIInfo(GenericInfo):
                 _bin = f'{bs}'
             else:
                 _bin = f'{bs}-{be - 1}'
-            lg.log(loglev, f'        UMIs with {_bin} reads: {v}')
-        lg.log(loglev, f'    Possible duplicate reads: {self.possible_dups}')
+            lg.log(loglev, f'    UMIs with {_bin} reads: {v}')
+        lg.log(loglev, f'  Possible duplicate reads: {self.possible_dups}')
 
-        lg.log(loglev, '  Finding duplicates and selecting representatives...')
+        lg.log(loglev, 'Finding duplicates and selecting representatives...')
         return
     def postlog(self, loglev=lg.INFO):
-        lg.log(loglev, f'  Identified UMI duplicate reads excluded: {self.nexclude}')
+        # lg.log(loglev, f'  Identified UMI duplicate reads excluded: {self.nexclude}')
         lg.log(loglev, f'    UMIs with 1 component: {self.ncomps_umi[1]}')
         lg.log(loglev, f'    UMIs with 2 components: {self.ncomps_umi[2]}')
         lg.log(loglev, f'    UMIs with 3 components: {self.ncomps_umi[3]}')
         _gt3 = sum(v for k, v in self.ncomps_umi.items() if k > 3)
         if _gt3:
             lg.log(loglev, f'    UMIs with >3 components: {_gt3}')
-        lg.log(loglev, f'Total reads excluded: {self.nexclude}')
-
-
-
+        lg.log(loglev, f'Total UMI duplicate reads excluded: {self.nexclude}')

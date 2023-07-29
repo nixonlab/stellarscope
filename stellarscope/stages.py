@@ -156,12 +156,7 @@ class FitModel(Stage):
     def run(self, opts, st_obj: Stellarscope):
         self.startrun()
         st_model, poolinfo = st_obj.fit_pooling_model()
-        lg.info(f'  Total lnL            : {st_model.lnl}')
-        lg.info(f'  Total lnL (summaries): {poolinfo.total_lnl()}')
-        lg.info(f'  number of models estimated: {len(poolinfo.models_info)}')
-        lg.info(f'  total obs: {poolinfo.total_obs()}')
-        lg.info(f'  total params: {poolinfo.total_params()}')
-        lg.info(f'  BIC: {poolinfo.BIC()}')
+        poolinfo.log()
         self.endrun()
         return st_model
 

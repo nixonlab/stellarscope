@@ -992,10 +992,6 @@ class TelescopeLikelihood(object):
             nbest = bestmat.sum(1)
             rinfo.assigned = sum(nbest.A1 == 1)
             rinfo.ambiguous = sum(nbest.A1 > 1)
-            # rinfo.unaligned = sum(nbest.A1 == 0)
-            # lg.info(f'  best_exclude: reads with no best alignments {sum(nbest.A1 == 0)}')
-            # lg.info(f'  best_exclude: reads with 1 best alignment {sum(nbest.A1 == 1)}')
-            # lg.info(f'  best_exclude: reads with >1 best alignments {sum(nbest.A1 > 1)}')
             reassign_mat = bestmat.multiply(nbest == 1)
         elif mode == 'best_conf':
             ''' Zero out all values less than threshold. Since each row must 
@@ -1305,7 +1301,9 @@ def _fit_pooling_model(
                     _rows.extend(st.bcode_ridx_map[_bcode])
 
             ''' No reads for this celltype '''
-            if not _rows: continue
+            if not _rows:
+                lg.info(f'        ...not fitting "{_ctype}" -> no reads found')
+                continue
 
             _I = rowid(_rows, _fullmat.shape[0])
             yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
@@ -1321,6 +1319,12 @@ def _fit_pooling_model(
         """
         for _bcode, _rowset in st.bcode_ridx_map.items():
             _rows = sorted(_rowset)
+
+            ''' No reads for this cell barcode '''
+            if not _rows:
+                lg.info(f'        ...not fitting "{_bcode}" -> no reads found')
+                continue
+
             _I = rowid(_rows, _fullmat.shape[0])
             yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
@@ -1342,7 +1346,7 @@ def _fit_pooling_model(
     ret_model = TelescopeLikelihood(_fullmat, opts)
 
     if opts.pooling_mode == 'pseudobulk':
-        lg.info(f'    1 model to fit')
+        lg.info(f'Models to fit: 1')
         poolinfo.nmodels = 1
         ret_model.em()
         poolinfo.models_info['pseudobulk'] = ret_model.fitinfo
@@ -1350,26 +1354,30 @@ def _fit_pooling_model(
 
     """ Initialize z for return model """
     ret_model.z = csr_matrix(_fullmat.shape, dtype=np.float64)
-    # ret_model.lnl = 0.0
-
     if opts.pooling_mode == 'individual':
         poolinfo.nmodels = len(st.bcode_ridx_map)
-        lg.info(f'    {len(st.bcode_ridx_map)} models to fit')
+        lg.info(f'Models to fit: {poolinfo.nmodels}')
+        if progress:
+            progress = 100 if np.log10(poolinfo.nmodels) > 2 else 10
         tl_generator = _tl_generator_individual()
     elif opts.pooling_mode == 'celltype':
         poolinfo.nmodels = len(st.celltypes)
-        lg.info(f'    {len(st.celltypes)} models to fit')
+        lg.info(f'Models to fit: {poolinfo.nmodels}')
+        if progress:
+            progress = 100 if np.log10(poolinfo.nmodels) > 2 else 10
         tl_generator = _tl_generator_celltype()
 
     processes = opts.nproc
     if processes == 1:
         for i, tl in enumerate(tl_generator):
             _z, _fitinfo = _em_wrapper(tl)
+            if progress and (i + 1) % progress == 0:
+                lg.info(f'        ...{i + 1} models fitted')
             ret_model.z += _z
             poolinfo.models_info[i] = tl.fitinfo
     else:
         with multiprocessing.Pool(processes) as pool:
-            lg.info(f'    (Using pool of {processes} workers)')
+            lg.info(f'  (Using pool of {processes} workers)')
             # _func = partial(_em_wrapper, use_lnl=opts.use_likelihood)
             imap_it = pool.imap(_em_wrapper, tl_generator, 10)
             for i, (_z, _fitinfo) in enumerate(imap_it):
@@ -1378,7 +1386,7 @@ def _fit_pooling_model(
                 ret_model.z += _z
                 poolinfo.models_info[i] = _fitinfo
 
-    ret_model.lnl = sum(_finfo.final_lnl for _finfo in poolinfo.models_info.values())
+    ret_model.lnl = poolinfo.total_lnl
     return ret_model, poolinfo
 
 
@@ -1701,9 +1709,7 @@ class Stellarscope(Telescope):
                     skip_fragment()
                     continue
 
-                ''' If running with single cell data, add cell tags to barcode/UMI trackers '''
-                # if self.single_cell:
-                # if self.opts.umi_tag in aln_tags and self.opts.barcode_tag in aln_tags:
+                ''' Add cell tags to barcode/UMI trackers '''
                 store_read_info(_cur_qname, _cur_bcode, _cur_umi)
 
                 ''' Fragment overlaps with annotation '''
