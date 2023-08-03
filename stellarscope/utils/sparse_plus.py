@@ -453,7 +453,7 @@ def parallel_groupby_sum(
             inv_by[v].append(k)
 
     with multiprocessing.Pool(proc) as pool:
-        lg.info(f'  (Using pool of {proc} workers)')
+        lg.debug(f'  (Using pool of {proc} workers)')
         _part = partial(group_colsum, mat=mat)
         aggrows = pool.map(_part, inv_by.values(), 40)
 

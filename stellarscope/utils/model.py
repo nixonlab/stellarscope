@@ -1928,56 +1928,6 @@ class Stellarscope(Telescope):
             idx_bc0 = {i: bcumi.split('_')[0] for bcumi, i in _ridxU.items()}
             return agg_bc(remat0, idx_bc0, proc)
 
-            #
-            # nidx_bc = {i:bcumi.split('_')[0] for bcumi,i in _ridx0.items()}
-            # _cts0, _ridx0 = remat0.groupby_sum(nidx_bc, dtype=_dtype, proc=proc)
-            # _ridx0 = {v: i for i, v in enumerate(_ridx0)}
-            #
-            # ''' Aggregate by barcode '''
-            # bcsum_list = []
-            # _empty_cell = csr_matrix((1, numft), dtype=mtx_dtype)
-            # for _bc in bc_list:
-            #     if _bc not in self.bcode_ridx_map:
-            #         if self.whitelist:
-            #             # If using whitelist, _bc_list may contain barcodes
-            #             # that are not in self.bcode_ridx_map, since the latter
-            #             # only contains barcodes for reads that align to the TE
-            #             # annotation.
-            #             bcsum_list.append(_empty_cell)
-            #             continue
-            #         else:
-            #             msg = f'barcode "{_bc}" not in _bc_list, '
-            #             msg += 'not using whitelist.'
-            #             raise StellarscopeError(msg)
-            #
-            #     _bcmat = reassigned.multiply(
-            #         rowid(self.bcode_ridx_map[_bc], reassigned.shape[0])
-            #     )
-            #     if umi_counts:
-            #         _bcsums = dok_matrix((1, self.shape[1]), dtype=mtx_dtype)
-            #         _nzrow, _nzcol = _bcmat.nonzero()
-            #         _nzumi = [umi_order[r] for r in _nzrow]
-            #         _fidx_umiwt = defaultdict(lambda: defaultdict(list))
-            #         for umi, ridx, fidx in zip(_nzumi, _nzrow, _nzcol):
-            #             _fidx_umiwt[fidx][umi].append(_bcmat[ridx, fidx])
-            #
-            #         for fidx, umiwt in _fidx_umiwt.items():
-            #             fsum = sum(max(wt) for umi, wt in umiwt.items())
-            #             _bcsums[0, fidx] = fsum
-            #
-            #         _bcsums = csr_matrix(_bcsums)
-            #     else:
-            #         _bcsums = _bcmat.colsums()
-            #     bcsum_list.append(_bcsums)
-            #
-            # if not all(_.shape == (1, numft) for _ in bcsum_list):
-            #     raise StellarscopeError("Incompatible shape")
-            # if not len(bcsum_list) == len(bc_list):
-            #     raise StellarscopeError("len(_bc_counts) != len(_bc_list)")
-            #
-            # ''' Write counts to MTX '''
-            # return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
-
         def mtx_meta(reassign_mode):
             """ Create metadata for mtx header """
             _meta = OrderedDict({
@@ -2032,10 +1982,10 @@ class Stellarscope(Telescope):
         for rmode_i, _rmode in enumerate(self.opts.reassign_mode):
             _remat = self.reassignments[_rmode]
             if self.opts.umi_counts:
-                lg.info(f'Aggregating counts for {_rmode} (umi_counts)')
+                lg.info(f'Aggregating UMI counts for {_rmode} (nproc={nproc})')
                 _counts = agg_bc_umi(_remat, ridx_bc, ridx_umi, nproc)
             else:
-                lg.info(f'Aggregating counts for {_rmode}')
+                lg.info(f'Aggregating counts for {_rmode} (nproc={nproc})')
                 _counts = agg_bc(_remat, ridx_bc, nproc)
 
             if not _counts.shape == (numft, numbc):
