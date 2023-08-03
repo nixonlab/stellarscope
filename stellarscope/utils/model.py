@@ -806,7 +806,7 @@ class TelescopeLikelihood(object):
             ### sanity check
             # _pi_hat0 = csr_matrix(_num / _denom)
             # assert np.allclose(_pi_hat0.data, _pi_hat.data)
-            return _pi_hat, _theta_hat.A1
+            return csr_matrix(_pi_hat), _theta_hat.A1
 
         try:
             return _mstep_dp()
@@ -1908,9 +1908,9 @@ class Stellarscope(Telescope):
 
         def agg_bc_umi(remat: csr_matrix, idx_bc: dict[int,str], idx_umi: dict[int,str], proc: int=1):
             # raise StellarscopeError('not implemented')
-            if np.issubdtype(reassigned.dtype, np.integer):
+            if np.issubdtype(remat.dtype, np.integer):
                 _dtype = np.int32
-            elif np.issubdtype(reassigned.dtype, np.floating):
+            elif np.issubdtype(remat.dtype, np.floating):
                 _dtype = np.float64
             else:
                 raise StellarscopeError("reassigned is not int or float")

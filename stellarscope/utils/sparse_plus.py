@@ -430,10 +430,12 @@ def divide_extp(num, denom):
             _preverr = np.seterr(under='ignore')
             _ret_data = np.exp(_log_num_data - _log_denom)
             np.seterr(**_preverr)
-            
-        return _ret_data
+
+        ret = _num_csr.copy()
+        ret.data = _ret_data
+        return ret
     else:
-        raise StellarscopeError("not supported")
+        raise NotImplementedError("only matrix/scalar")
 
 def group_colsum(sel: list[int], mat: csr_matrix_plus):
     return mat.multiply(row_identity_matrix(sel, mat.shape[0])).colsums()
