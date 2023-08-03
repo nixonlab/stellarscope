@@ -25,7 +25,7 @@ import scipy
 import pandas as pd
 import pysam
 from scipy.sparse.csgraph import connected_components
-from scipy.sparse import dok_matrix
+from scipy.sparse import dok_matrix, lil_matrix
 
 from stellarscope import StellarscopeError, AlignmentValidationError
 from . import OptionsBase
@@ -1882,8 +1882,51 @@ class Stellarscope(Telescope):
         -------
 
         """
+        # def _agg_bc_pandas(reassigned, umi_counts=False):
+        #     # Loading mtx in R does not support unsigned ints
+        #     # Could use np.int16 (max=32767) if consuming too much memory
+        #     # Currently using np.int32 (max=2147483647)
+        #     if np.issubdtype(reassigned.dtype, np.integer):
+        #         mtx_dtype = np.int32
+        #     elif np.issubdtype(reassigned.dtype, np.floating):
+        #         mtx_dtype = np.float64
+        #     else:
+        #         raise StellarscopeError("reassigned is not int or float")
+        #
+        #     df = pd.DataFrame.sparse.from_spmatrix(reassigned)
+        #     df.index = sorted(self.read_index, key=self.read_index.get)
+        #     df.columns = sorted(self.feat_index, key=self.feat_index.get)
+        #     countmat0 = df.groupby(self.read_bcode_map.get).sum().T
+        #     missing_bc = [bc for bc in _bc_list if bc not in countmat0.columns]
+        #     by = {i: self.read_bcode_map[rn] for i, rn in
+        #           enumerate(sorted(self.read_index, key=self.read_index.get))}
 
-        def agg_bc(reassigned, umi_counts=False):
+        def agg_bc(remat):
+            if np.issubdtype(remat.dtype, np.integer):
+                mtx_dtype = np.int32
+            elif np.issubdtype(remat.dtype, np.floating):
+                mtx_dtype = np.float64
+            else:
+                raise StellarscopeError("reassigned is not int or float")
+
+            _cts0, _ridx0 = remat.groupby_sum(ridx_bc, dtype=mtx_dtype)
+            _ridx0 = {v:i for i,v in enumerate(_ridx0)}
+            _empty_cell = csr_matrix((1, numft), dtype=mtx_dtype)
+            bcsum_list = []
+            for i, _bc in enumerate(bc_list):
+                if _bc in _ridx0:
+                    bcsum_list.append(_cts0[_ridx0[_bc], ])
+                else:
+                    bcsum_list.append(_empty_cell)
+
+            return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
+            # _countsT = lil_matrix((numbc, numft), dtype=mtx_dtype(_remat))
+            # for i, _bc in enumerate(bc_list):
+            #     if _bc in _ridx0:
+            #         _countsT[i,] = _cts0[_ridx0[_bc], ]
+            # return csr_matrix(_countsT.transpose())
+
+        def _agg_bc(reassigned, umi_counts=False):
             # Loading mtx in R does not support unsigned ints
             # Could use np.int16 (max=32767) if consuming too much memory
             # Currently using np.int32 (max=2147483647)
@@ -1939,8 +1982,21 @@ class Stellarscope(Telescope):
             ''' Write counts to MTX '''
             return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
 
+        # def mtx_dtype(spmat):
+        #     """ Determine datatype for MTX
+        #             Loading mtx in R does not support unsigned ints
+        #             Could use np.int16 (max=32767) if consuming too much memory
+        #             Currently using np.int32 (max=2147483647)
+        #     """
+        #     if np.issubdtype(spmat.dtype, np.integer):
+        #         return np.int32
+        #     elif np.issubdtype(spmat.dtype, np.floating):
+        #         return np.float64
+        #     else:
+        #         raise StellarscopeError("reassigned is not int or float")
 
         def mtx_meta(reassign_mode):
+            """ Create metadata for mtx header """
             _meta = OrderedDict({
                 'PN': 'stellarscope',
                 'VN': self.opts.version,
@@ -1962,34 +2018,41 @@ class Stellarscope(Telescope):
 
             return '\n '.join(f'{k}: {v}' for k, v in _meta.items())
 
-        ''' Write cell barcodes to tsv '''
-        _bc_tsv = self.opts.outfile_path('barcodes.tsv')
+        ''' Final order for barcodes and features'''
         if self.whitelist:
-            _bc_list = sorted(self.whitelist, key=self.whitelist.get)
+            bc_list = sorted(self.whitelist, key=self.whitelist.get)
         else:
-            _bc_list = sorted(self.bcode_ridx_map.keys())
-        with open(_bc_tsv, 'w') as outh:
-            print('\n'.join(_bc_list), file=outh)
+            bc_list = sorted(self.bcode_ridx_map.keys())
+        numbc = len(bc_list)
 
-        ''' Write feature names to tsv '''
-        _ft_tsv = self.opts.outfile_path('features.tsv')
-        _ft_list = sorted(self.feat_index, key=self.feat_index.get)
-        with open(_ft_tsv, 'w') as outh:
-            print('\n'.join(_ft_list), file=outh)
+        ft_list = sorted(self.feat_index, key=self.feat_index.get)
+        numft = len(ft_list)
 
-        ''' Output count matrix '''
+        ''' Write barcodes.tsv and features.tsv '''
+        with open(self.opts.outfile_path('barcodes.tsv'), 'w') as outh:
+            print('\n'.join(bc_list), file=outh)
+
+        with open(self.opts.outfile_path('features.tsv'), 'w') as outh:
+            print('\n'.join(ft_list), file=outh)
+
+        ''' Generate count matrix '''
         if self.opts.umi_counts:
             lg.info("  using UMI counts")
-            umi_order = [self.read_umi_map[qname] for qname, ridx in
-                         sorted(self.read_index, key=self.read_index.get)]
-        for i, _rmode in enumerate(self.opts.reassign_mode):
-            if i == 0:
-                _out_mtx = self.opts.outfile_path('TE_counts.mtx')
-            else:
-                _out_mtx = self.opts.outfile_path(f'TE_counts.{_rmode}.mtx')
+            umi_order = [self.read_umi_map[qname] for qname, ridx in sorted(self.read_index, key=self.read_index.get)]
 
-            _counts = agg_bc(self.reassignments[_rmode], self.opts.umi_counts)
-            scipy.io.mmwrite(_out_mtx, _counts, comment=mtx_meta(_rmode))
+        _rnames = sorted(self.read_index, key=self.read_index.get)
+        ridx_bc = dict(enumerate([self.read_bcode_map[rn] for rn in _rnames]))
+        for rmode_i, _rmode in enumerate(self.opts.reassign_mode):
+            _counts = agg_bc(self.reassignments[_rmode])
+
+            ''' Write output MTX '''
+            if rmode_i == 0:
+                out_mtx = self.opts.outfile_path('TE_counts.mtx')
+            else:
+                out_mtx = self.opts.outfile_path(f'TE_counts.{_rmode}.mtx')
+
+            scipy.io.mmwrite(out_mtx, _counts, comment=mtx_meta(_rmode))
+
         return
 
     def output_report_old(self, tl, stats_filename, counts_filename,

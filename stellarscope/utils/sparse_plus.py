@@ -4,15 +4,21 @@
 from __future__ import division
 from __future__ import annotations
 
+import typing
+from collections.abc import Mapping
+
 import numpy.random
 from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 from typing import Optional
+from multiprocessing import Pool
 
 import numpy as np
 import scipy.sparse
+from scipy.sparse import dok_array
 from numpy.random import default_rng
+from collections import defaultdict
 
 import logging as lg
 
@@ -276,6 +282,44 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             _dok[0, i] = sum(_csc.data[_csc.indptr[i]:_csc.indptr[i + 1]])
         return type(self)(_dok)
 
+    def groupby_sum(self,
+                    by: Mapping[int, str | int] | typing.Callable,
+                    group_index: bool = True,
+                    dtype = np.float64
+    ):
+        """
+
+        Parameters
+        ----------
+        by: Mapping[int, str | int] | typing.Callable
+            Function that is called on each index to determine the groups
+        group_index: bool
+            If True (default) returns a two-tuple with the group names in the
+            same order as the matrix rows.
+        dtype
+            The datatype of the return matrix
+
+        Returns
+        -------
+
+        """
+        if isinstance(by, Mapping):
+            inv_by = defaultdict(list)
+            for k,v in by.items():
+                inv_by[v].append(k)
+
+        for k, v in inv_by.items():
+            inv_by[k] = np.array(sorted(v))
+
+        mat = dok_array((len(inv_by), self.shape[1]), dtype=dtype)
+        for i, (group, select_ind) in enumerate(inv_by.items()):
+            mat[i,] = self[select_ind, ].sum(0)
+
+        if group_index:
+            return type(self)(mat), list(inv_by.keys())
+        else:
+            return type(self)(mat)
+
     def save(self, filename):
         np.savez(filename, data=self.data, indices=self.indices,
                  indptr=self.indptr, shape=self.shape)
@@ -353,15 +397,3 @@ def divide_extp(num, denom):
             _preverr = np.seterr(under='ignore')
             _ret_data = np.exp(_log_num_data - _log_denom)
             np.seterr(**_preverr)
-
-        return csr_matrix_plus(
-            (
-                _ret_data,
-                _num_csr.indices,
-                _num_csr.indptr
-            ),
-            shape=_num_csr.shape,
-            dtype=np.longdouble
-        )
-    raise ValueError('`divide_extp` implemented for dividing matrix by scalar')
-
