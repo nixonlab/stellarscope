@@ -36,6 +36,7 @@ from .sparse_plus import csr_matrix_plus as csr_matrix
 from .sparse_plus import row_identity_matrix as rowid
 from .sparse_plus import bool_inv
 from .sparse_plus import divide_extp
+from .sparse_plus import parallel_groupby_sum
 from .statistics import FitInfo, PoolInfo, ReassignInfo, UMIInfo
 
 from .colors import c2str, D2PAL, GPAL
@@ -1882,36 +1883,20 @@ class Stellarscope(Telescope):
         -------
 
         """
-        # def _agg_bc_pandas(reassigned, umi_counts=False):
-        #     # Loading mtx in R does not support unsigned ints
-        #     # Could use np.int16 (max=32767) if consuming too much memory
-        #     # Currently using np.int32 (max=2147483647)
-        #     if np.issubdtype(reassigned.dtype, np.integer):
-        #         mtx_dtype = np.int32
-        #     elif np.issubdtype(reassigned.dtype, np.floating):
-        #         mtx_dtype = np.float64
-        #     else:
-        #         raise StellarscopeError("reassigned is not int or float")
-        #
-        #     df = pd.DataFrame.sparse.from_spmatrix(reassigned)
-        #     df.index = sorted(self.read_index, key=self.read_index.get)
-        #     df.columns = sorted(self.feat_index, key=self.feat_index.get)
-        #     countmat0 = df.groupby(self.read_bcode_map.get).sum().T
-        #     missing_bc = [bc for bc in _bc_list if bc not in countmat0.columns]
-        #     by = {i: self.read_bcode_map[rn] for i, rn in
-        #           enumerate(sorted(self.read_index, key=self.read_index.get))}
-
-        def agg_bc(remat):
+        def agg_bc(remat: csr_matrix, idx_bc: dict[int, str], proc: int=1):
             if np.issubdtype(remat.dtype, np.integer):
-                mtx_dtype = np.int32
+                _dtype = np.int32
             elif np.issubdtype(remat.dtype, np.floating):
-                mtx_dtype = np.float64
+                _dtype = np.float64
             else:
                 raise StellarscopeError("reassigned is not int or float")
 
-            _cts0, _ridx0 = remat.groupby_sum(ridx_bc, dtype=mtx_dtype)
+            ''' Group by barcode and calculate colsums '''
+            _cts0, _ridx0 = remat.groupby_sum(idx_bc, dtype=_dtype, proc=proc)
             _ridx0 = {v:i for i,v in enumerate(_ridx0)}
-            _empty_cell = csr_matrix((1, numft), dtype=mtx_dtype)
+
+            ''' Order barcodes by `bc_list` and add in empty barcodes '''
+            _empty_cell = csr_matrix((1, numft), dtype=_dtype)
             bcsum_list = []
             for i, _bc in enumerate(bc_list):
                 if _bc in _ridx0:
@@ -1919,81 +1904,79 @@ class Stellarscope(Telescope):
                 else:
                     bcsum_list.append(_empty_cell)
 
-            return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
-            # _countsT = lil_matrix((numbc, numft), dtype=mtx_dtype(_remat))
-            # for i, _bc in enumerate(bc_list):
-            #     if _bc in _ridx0:
-            #         _countsT[i,] = _cts0[_ridx0[_bc], ]
-            # return csr_matrix(_countsT.transpose())
+            return scipy.sparse.vstack(bcsum_list, dtype=_dtype).transpose()
 
-        def _agg_bc(reassigned, umi_counts=False):
-            # Loading mtx in R does not support unsigned ints
-            # Could use np.int16 (max=32767) if consuming too much memory
-            # Currently using np.int32 (max=2147483647)
+        def agg_bc_umi(remat: csr_matrix, idx_bc: dict[int,str], idx_umi: dict[int,str], proc: int=1):
+            # raise StellarscopeError('not implemented')
             if np.issubdtype(reassigned.dtype, np.integer):
-                mtx_dtype = np.int32
+                _dtype = np.int32
             elif np.issubdtype(reassigned.dtype, np.floating):
-                mtx_dtype = np.float64
+                _dtype = np.float64
             else:
                 raise StellarscopeError("reassigned is not int or float")
 
-            ''' Aggregate by barcode '''
-            bcsum_list = []
-            _empty_cell = csr_matrix((1, len(_ft_list)), dtype=mtx_dtype)
-            for _bc in _bc_list:
-                if _bc not in self.bcode_ridx_map:
-                    if self.whitelist:
-                        # If using whitelist, _bc_list may contain barcodes
-                        # that are not in self.bcode_ridx_map, since the latter
-                        # only contains barcodes for reads that align to the TE
-                        # annotation.
-                        bcsum_list.append(_empty_cell)
-                        continue
-                    else:
-                        msg = f'barcode "{_bc}" not in _bc_list, '
-                        msg += 'not using whitelist.'
-                        raise StellarscopeError(msg)
+            ''' Group by BC+UMI and calculate colsums '''
+            idx_bcU = {i:f'{idx_bc[i]}_{idx_umi[i]}' for i in idx_bc}
+            _ctsU, _ridxU = remat.groupby_sum(idx_bcU, dtype=_dtype, proc=proc)
+            _ridxU = {v:i for i,v in enumerate(_ridxU)}
 
-                _bcmat = reassigned.multiply(
-                    rowid(self.bcode_ridx_map[_bc], reassigned.shape[0])
-                )
-                if umi_counts:
-                    _bcsums = dok_matrix((1, self.shape[1]), dtype=mtx_dtype)
-                    _nzrow, _nzcol = _bcmat.nonzero()
-                    _nzumi = [umi_order[r] for r in _nzrow]
-                    _fidx_umiwt = defaultdict(lambda: defaultdict(list))
-                    for umi, ridx, fidx in zip(_nzumi, _nzrow, _nzcol):
-                        _fidx_umiwt[fidx][umi].append(_bcmat[ridx, fidx])
+            ''' Adjust so each BC+UMI contributes 1 count '''
+            remat0 = _ctsU.copy()
+            remat0.data = np.ones(len(remat0.data))
 
-                    for fidx, umiwt in _fidx_umiwt.items():
-                        fsum = sum(max(wt) for umi, wt in umiwt.items())
-                        _bcsums[0, fidx] = fsum
+            ''' Group by barcode and calculate colsums '''
+            idx_bc0 = {i: bcumi.split('_')[0] for bcumi, i in _ridxU.items()}
+            return agg_bc(remat0, idx_bc0, proc)
 
-                    _bcsums = csr_matrix(_bcsums)
-                else:
-                    _bcsums = _bcmat.colsums()
-                bcsum_list.append(_bcsums)
-
-            if not all(_.shape == (1, len(_ft_list)) for _ in bcsum_list):
-                raise StellarscopeError("Incompatible shape")
-            if not len(bcsum_list) == len(_bc_list):
-                raise StellarscopeError("len(_bc_counts) != len(_bc_list)")
-
-            ''' Write counts to MTX '''
-            return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
-
-        # def mtx_dtype(spmat):
-        #     """ Determine datatype for MTX
-        #             Loading mtx in R does not support unsigned ints
-        #             Could use np.int16 (max=32767) if consuming too much memory
-        #             Currently using np.int32 (max=2147483647)
-        #     """
-        #     if np.issubdtype(spmat.dtype, np.integer):
-        #         return np.int32
-        #     elif np.issubdtype(spmat.dtype, np.floating):
-        #         return np.float64
-        #     else:
-        #         raise StellarscopeError("reassigned is not int or float")
+            #
+            # nidx_bc = {i:bcumi.split('_')[0] for bcumi,i in _ridx0.items()}
+            # _cts0, _ridx0 = remat0.groupby_sum(nidx_bc, dtype=_dtype, proc=proc)
+            # _ridx0 = {v: i for i, v in enumerate(_ridx0)}
+            #
+            # ''' Aggregate by barcode '''
+            # bcsum_list = []
+            # _empty_cell = csr_matrix((1, numft), dtype=mtx_dtype)
+            # for _bc in bc_list:
+            #     if _bc not in self.bcode_ridx_map:
+            #         if self.whitelist:
+            #             # If using whitelist, _bc_list may contain barcodes
+            #             # that are not in self.bcode_ridx_map, since the latter
+            #             # only contains barcodes for reads that align to the TE
+            #             # annotation.
+            #             bcsum_list.append(_empty_cell)
+            #             continue
+            #         else:
+            #             msg = f'barcode "{_bc}" not in _bc_list, '
+            #             msg += 'not using whitelist.'
+            #             raise StellarscopeError(msg)
+            #
+            #     _bcmat = reassigned.multiply(
+            #         rowid(self.bcode_ridx_map[_bc], reassigned.shape[0])
+            #     )
+            #     if umi_counts:
+            #         _bcsums = dok_matrix((1, self.shape[1]), dtype=mtx_dtype)
+            #         _nzrow, _nzcol = _bcmat.nonzero()
+            #         _nzumi = [umi_order[r] for r in _nzrow]
+            #         _fidx_umiwt = defaultdict(lambda: defaultdict(list))
+            #         for umi, ridx, fidx in zip(_nzumi, _nzrow, _nzcol):
+            #             _fidx_umiwt[fidx][umi].append(_bcmat[ridx, fidx])
+            #
+            #         for fidx, umiwt in _fidx_umiwt.items():
+            #             fsum = sum(max(wt) for umi, wt in umiwt.items())
+            #             _bcsums[0, fidx] = fsum
+            #
+            #         _bcsums = csr_matrix(_bcsums)
+            #     else:
+            #         _bcsums = _bcmat.colsums()
+            #     bcsum_list.append(_bcsums)
+            #
+            # if not all(_.shape == (1, numft) for _ in bcsum_list):
+            #     raise StellarscopeError("Incompatible shape")
+            # if not len(bcsum_list) == len(bc_list):
+            #     raise StellarscopeError("len(_bc_counts) != len(_bc_list)")
+            #
+            # ''' Write counts to MTX '''
+            # return scipy.sparse.vstack(bcsum_list, dtype=mtx_dtype).transpose()
 
         def mtx_meta(reassign_mode):
             """ Create metadata for mtx header """
@@ -2036,14 +2019,29 @@ class Stellarscope(Telescope):
             print('\n'.join(ft_list), file=outh)
 
         ''' Generate count matrix '''
-        if self.opts.umi_counts:
-            lg.info("  using UMI counts")
-            umi_order = [self.read_umi_map[qname] for qname, ridx in sorted(self.read_index, key=self.read_index.get)]
+        nproc = self.opts.nproc
+        _qnames = sorted(self.read_index, key=self.read_index.get)
+        ridx_bc = dict(enumerate([self.read_bcode_map[rn] for rn in _qnames]))
+        # assert ridx_bc == {i:self.read_bcode_map[qn] for i,qn in enumerate(_qnames)}
 
-        _rnames = sorted(self.read_index, key=self.read_index.get)
-        ridx_bc = dict(enumerate([self.read_bcode_map[rn] for rn in _rnames]))
+        if self.opts.umi_counts:
+            ridx_umi = {i:self.read_umi_map[qn] for i,qn in enumerate(_qnames)}
+            #umi_order = [self.read_umi_map[qname] for qname, ridx in sorted(self.read_index, key=self.read_index.get)]
+
+
         for rmode_i, _rmode in enumerate(self.opts.reassign_mode):
-            _counts = agg_bc(self.reassignments[_rmode])
+            _remat = self.reassignments[_rmode]
+            if self.opts.umi_counts:
+                lg.info(f'Aggregating counts for {_rmode} (umi_counts)')
+                _counts = agg_bc_umi(_remat, ridx_bc, ridx_umi, nproc)
+            else:
+                lg.info(f'Aggregating counts for {_rmode}')
+                _counts = agg_bc(_remat, ridx_bc, nproc)
+
+            if not _counts.shape == (numft, numbc):
+                raise StellarscopeError(
+                    f'Incompatible shapes: {_counts.shape} != {(numft, numbc)}'
+                )
 
             ''' Write output MTX '''
             if rmode_i == 0:

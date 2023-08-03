@@ -12,7 +12,9 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 from typing import Optional
-from multiprocessing import Pool
+
+import multiprocessing
+from functools import partial
 
 import numpy as np
 import scipy.sparse
@@ -282,7 +284,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             _dok[0, i] = sum(_csc.data[_csc.indptr[i]:_csc.indptr[i + 1]])
         return type(self)(_dok)
 
-    def groupby_sum(self,
+    def groupby_sum_slice(self,
                     by: Mapping[int, str | int] | typing.Callable,
                     group_index: bool = True,
                     dtype = np.float64
@@ -314,6 +316,37 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         mat = dok_array((len(inv_by), self.shape[1]), dtype=dtype)
         for i, (group, select_ind) in enumerate(inv_by.items()):
             mat[i,] = self[select_ind, ].sum(0)
+
+        if group_index:
+            return type(self)(mat), list(inv_by.keys())
+        else:
+            return type(self)(mat)
+
+    def groupby_sum(self,
+                    by: Mapping[int, str | int] | typing.Callable,
+                    group_index: bool = True,
+                    dtype = np.float64,
+                    proc: int = 1
+    ):
+        if proc > 1:
+            return parallel_groupby_sum(
+                self, by, group_index, dtype, proc
+            )
+
+        if isinstance(by, Mapping):
+            inv_by = defaultdict(list)
+            for k,v in by.items():
+                inv_by[v].append(k)
+
+        aggrows = []
+        for i, (group, select_ind) in enumerate(inv_by.items()):
+            aggrows.append(
+                self.multiply(
+                    row_identity_matrix(select_ind, self.shape[0])
+                ).colsums()
+            )
+
+        mat = scipy.sparse.vstack(aggrows, dtype=dtype)
 
         if group_index:
             return type(self)(mat), list(inv_by.keys())
@@ -397,3 +430,31 @@ def divide_extp(num, denom):
             _preverr = np.seterr(under='ignore')
             _ret_data = np.exp(_log_num_data - _log_denom)
             np.seterr(**_preverr)
+            
+
+def group_colsum(sel: list[int], mat: csr_matrix_plus):
+    return mat.multiply(row_identity_matrix(sel, mat.shape[0])).colsums()
+
+def parallel_groupby_sum(
+        mat: csr_matrix_plus,
+        by: Mapping[int, str | int] | typing.Callable,
+        group_index: bool = True,
+        dtype = np.float64,
+        proc: int = 1
+):
+    if isinstance(by, Mapping):
+        inv_by = defaultdict(list)
+        for k,v in by.items():
+            inv_by[v].append(k)
+
+    with multiprocessing.Pool(proc) as pool:
+        lg.info(f'  (Using pool of {proc} workers)')
+        _part = partial(group_colsum, mat=mat)
+        aggrows = pool.map(_part, inv_by.values(), 40)
+
+    ret = scipy.sparse.vstack(aggrows, dtype=dtype)
+
+    if group_index:
+        return type(mat)(ret), list(inv_by.keys())
+    else:
+        return type(mat)(ret)
