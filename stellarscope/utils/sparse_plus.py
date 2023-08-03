@@ -431,6 +431,9 @@ def divide_extp(num, denom):
             _ret_data = np.exp(_log_num_data - _log_denom)
             np.seterr(**_preverr)
             
+        return _ret_data
+    else:
+        raise StellarscopeError("not supported")
 
 def group_colsum(sel: list[int], mat: csr_matrix_plus):
     return mat.multiply(row_identity_matrix(sel, mat.shape[0])).colsums()
