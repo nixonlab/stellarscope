@@ -31,7 +31,7 @@ class StellarscopeCellSortOptions(utils.OptionsBase):
     def __init__(self, args):
         super().__init__(args)
 
-def check_samtools_version(minver: str = "1.10"):
+def check_samtools_version(minver: str = "1.16"):
     from packaging import version
     output = subprocess.check_output('samtools --version', shell=True)
     prg, ver = output.decode().split('\n')[0].split()
