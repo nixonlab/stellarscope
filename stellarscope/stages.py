@@ -89,7 +89,7 @@ class LoadAlignments(Stage):
     def run(self, opts, st_obj: Stellarscope, annot: BaseAnnotation):
         self.startrun()
         alninfo = st_obj.load_alignment(annot)
-        # st_obj.print_summary(lg.INFO)
+        lg.info('Loading alignments complete.')
         alninfo.log()
         self.endrun()
         st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))

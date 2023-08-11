@@ -436,58 +436,6 @@ class Telescope(object):
         alninfo['overlap_unique'] = np.sum(self.raw_scores.count(1) == 1)
         alninfo['overlap_ambig'] = self.shape[0] - alninfo['overlap_unique']
 
-    """
-    def load_mappings(self, samfile_path):
-        _mappings = []
-        with pysam.AlignmentFile(samfile_path) as sf:
-            for pairs in alignment.fetch_fragments(sf, until_eof=True):
-                for pair in pairs:
-                    if pair.r1.has_tag('ZT') and pair.r1.get_tag('ZT') == 'SEC':
-                        continue
-                    _mappings.append((
-                        pair.query_name,
-                        pair.r1.get_tag('ZF'),
-                        pair.alnscore,
-                        pair.alnlen
-                    ))
-                    if len(_mappings) % 500000 == 0:
-                        lg.info('...loaded {:.1f}M mappings'.format(
-                            len(_mappings) / 1e6))
-        return _mappings
-    """
-
-    """
-    def _mapping_to_matrix(self, mappings):
-        ''' '''
-        _maxAS = max(t[2] for t in mappings)
-        _minAS = min(t[2] for t in mappings)
-        lg.debug('max alignment score: {}'.format(_maxAS))
-        lg.debug('min alignment score: {}'.format(_minAS))
-
-        # Rescale integer alignment score to be greater than zero
-        rescale = {s: (s - _minAS + 1) for s in range(_minAS, _maxAS + 1)}
-
-        # Construct dok matrix with mappings
-        if 'annotated_features' in self.run_info:
-            ncol = self.run_info['annotated_features']
-        else:
-            ncol = len(set(t[1] for t in mappings))
-        dim = (len(mappings), ncol)
-        _m1 = scipy.sparse.dok_matrix(dim, dtype=np.uint16)
-        _ridx = self.read_index
-        _fidx = self.feat_index
-        for rid, fid, ascr, alen in mappings:
-            i = _ridx.setdefault(rid, len(_ridx))
-            j = _fidx.setdefault(fid, len(_fidx))
-            _m1[i, j] = max(_m1[i, j], (rescale[ascr] + alen))
-
-        # Trim matrix to size
-        _m1 = _m1[:len(_ridx), :len(_fidx)]
-
-        # Convert dok matrix to csr
-        self.raw_scores = csr_matrix(_m1)
-        self.shape = (len(_ridx), len(_fidx))
-    """
 
     def output_report(self, tl, stats_filename, counts_filename):
         _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
@@ -1570,8 +1518,6 @@ class Stellarscope(Telescope):
         ''' Convert alignment to sparse matrix '''
         mapping_to_matrix(maps)
         return alninfo
-        # for k, v in alninfo.items():
-        #     self.run_info[k] = v
 
     def _load_sequential(self, annotation):
         """ Load queryname sorted BAM sequentially
@@ -1583,8 +1529,8 @@ class Stellarscope(Telescope):
 
         """
 
-        def skip_fragment(reason: Optional[str] = None):
-            _alninfo.update(_finfo)
+        def skip_fragment():
+            alninfo.update(_finfo)
             if self.opts.updated_sam:
                 [p.write(bam_u) for p in alns]
 
@@ -1641,19 +1587,18 @@ class Stellarscope(Telescope):
         assign_func = Assigner(annotation, self.opts).assign_func()
 
         # Initialize variables for function
-        alninfo = OrderedDict()
-        # _alninfo = AlignInfo(self.opts.progress)
-        _alninfo = AlignInfo(500)
+        # alninfo = OrderedDict()
+        alninfo = AlignInfo(self.opts.progress)
 
-        alninfo['total_fragments'] = 0  # total number of fragments
-        for code, desc in ALNCODES:
-            alninfo[code] = 0       # alignment code
-        alninfo['nofeat_U'] = 0     # uniquely aligns outside annotation
-        alninfo['nofeat_A'] = 0     # ambiguously aligns outside annotation
-        alninfo['feat_U'] = 0       # uniquely aligns overlapping annotation
-        alninfo['feat_A'] = 0       # ambiguously aligns overlapping annotation
-        alninfo['minAS'] = BIG_INT  # minimum alignment score
-        alninfo['maxAS'] = -BIG_INT # maximum alignment score
+        # alninfo['total_fragments'] = 0  # total number of fragments
+        # for code, desc in ALNCODES:
+        #     alninfo[code] = 0       # alignment code
+        # alninfo['nofeat_U'] = 0     # uniquely aligns outside annotation
+        # alninfo['nofeat_A'] = 0     # ambiguously aligns outside annotation
+        # alninfo['feat_U'] = 0       # uniquely aligns overlapping annotation
+        # alninfo['feat_A'] = 0       # ambiguously aligns overlapping annotation
+        # alninfo['minAS'] = BIG_INT  # minimum alignment score
+        # alninfo['maxAS'] = -BIG_INT # maximum alignment score
 
         _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
@@ -1666,17 +1611,17 @@ class Stellarscope(Telescope):
 
             # Iterate over fragments
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
-                alninfo['total_fragments'] += 1
+                # alninfo['total_fragments'] += 1
                 _finfo = FragmentInfo()
 
-                # Write progress to console or log
-                if self.opts.progress and \
-                        alninfo['total_fragments'] % self.opts.progress == 0:
-                    log_progress(alninfo['total_fragments'])
+                # # Write progress to console or log
+                # if self.opts.progress and \
+                #         alninfo['total_fragments'] % self.opts.progress == 0:
+                #     log_progress(alninfo['total_fragments'])
 
                 ''' Count code '''
                 _code = ALNCODES[ci][0]
-                alninfo[_code] += 1
+                # alninfo[_code] += 1
                 _finfo.add_code(_code)
 
                 ''' Check whether fragment is mapped '''
@@ -1684,16 +1629,10 @@ class Stellarscope(Telescope):
                     skip_fragment()
                     continue
 
-                # if _code == 'SU' or _code == 'PU':
-                #     # if self.opts.updated_sam: alns[0].write(bam_u)
-                #     skip_fragment()
-                #     continue
-
                 ''' Get alignment barcode and UMI '''
                 _cur_qname = alns[0].query_name
                 _cur_bcode = get_tag_alignments(alns, self.opts.barcode_tag)
                 _cur_umi = get_tag_alignments(alns, self.opts.umi_tag)
-                # aln_tags = dict(alns[0].r1.get_tags())
 
                 ''' Validate barcode and UMI '''
                 if _cur_bcode is None:
@@ -1714,23 +1653,23 @@ class Stellarscope(Telescope):
 
                 ''' Fragment is ambiguous if multiple mappings'''
                 _mapped = [a for a in alns if not a.is_unmapped]
-                _ambig = len(_mapped) > 1
-                _finfo.ambig = _ambig
+                # _ambig = len(_mapped) > 1
+                _finfo.ambig = len(_mapped) > 1
 
                 ''' Update min and max scores '''
                 _scores = [a.alnscore for a in _mapped]
-                alninfo['minAS'] = min(alninfo['minAS'], *_scores)
-                alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
+                # alninfo['minAS'] = min(alninfo['minAS'], *_scores)
+                # alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
                 _finfo.scores = _scores
 
                 ''' Check whether fragment overlaps annotation '''
                 overlap_feats = list(map(assign_func, _mapped))
-                has_overlap = any(f != _nfkey for f in overlap_feats)
-                _finfo.overlap = has_overlap
+                # has_overlap = any(f != _nfkey for f in overlap_feats)
+                _finfo.overlap = any(f != _nfkey for f in overlap_feats)
 
                 ''' Fragment has no overlap, skip '''
-                if not has_overlap:
-                    alninfo['nofeat_{}'.format('A' if _ambig else 'U')] += 1
+                if not _finfo.overlap:
+                    # alninfo['nofeat_{}'.format('A' if _ambig else 'U')] += 1
                     skip_fragment()
                     continue
 
@@ -1738,8 +1677,8 @@ class Stellarscope(Telescope):
                 store_read_info(_cur_qname, _cur_bcode, _cur_umi)
 
                 ''' Fragment overlaps with annotation '''
-                alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
-                _alninfo.update(_finfo)
+                # alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
+                alninfo.update(_finfo)
 
                 ''' Find the best alignment for each locus '''
                 for m in process_fragment(_mapped, overlap_feats):
@@ -1749,13 +1688,11 @@ class Stellarscope(Telescope):
                     [p.write(bam_t) for p in alns]
 
         ''' Loading complete '''
-        lg.info('Loading alignments complete.')
-        _alninfo.log()
         if self.opts.updated_sam:
             bam_u.close()
             bam_t.close()
 
-        return _mappings, _alninfo
+        return _mappings, alninfo
 
     def dedup_umi(self, output_report=True, summary=True):
         """
