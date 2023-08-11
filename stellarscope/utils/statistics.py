@@ -9,16 +9,261 @@ import numpy.typing as npt
 
 
 import numpy as np
+import inspect
+import pandas as pd
+from numbers import Number
+from . import human_format
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
+def property_names(cls):
+    [p for p in dir(cls) if isinstance(getattr(cls, p), property)]
 
 class GenericInfo(object):
+    """
+
+    """
+    _infotype: str
+
     def __init__(self):
-        self.infotype = self.__class__.__name__
+        self._infotype = self.__class__.__name__
+
+    @property
+    def infotype(self):
+        return self._infotype
+
     def __str__(self):
         return '\n'.join(f'{k}\t{v}' for k,v in vars(self).items())
+
+    def to_dataframe(self):
+        property_names(self)
+        return pd.DataFrame({
+            'stage': self.infotype,
+            'var': 'name',
+            'value': 'value'
+        })
+
+class FragmentInfo(GenericInfo):
+    paired: Optional[bool]
+    mapped: Optional[bool]
+    ambig: Optional[bool]
+    overlap: Optional[bool]
+    error: Optional[str]
+    scores: list[int]
+
+    def __init__(self):
+        self.paired = None
+        self.mapped = None
+        self.ambig = None
+        self.overlap = None
+        self.error = None
+        self.scores = None
+
+    def add_code(self, code):
+        self.paired = code[0] == 'P'
+        self.mapped = code[1] == 'M' or code[1] == 'X'
+
+
+
+
+class AlignInfo(GenericInfo):
+    """
+
+    """
+    progress: int
+    _total_fragments: int
+    _single_unmapped: int
+    _paired_unmapped: int
+    _single_mapped_noloc: int
+    _paired_mapped_noloc: int
+    _single_mapped_loc: int
+    _paired_mapped_loc: int
+    _minAS: int
+    _maxAS: int
+
+
+    def __init__(self, progress: int = 500000):
+        super().__init__()
+        self.progress = progress
+        self._total_fragments = 0
+        self._single = 0
+        self._paired = 0
+        self._unmapped = 0
+        self._noloc_unique = 0
+        self._noloc_ambig = 0
+        self._loc_unique = 0
+        self._loc_ambig = 0
+        self.error = Counter()
+        self._minAS = np.iinfo(np.int32).max
+        self._maxAS = np.iinfo(np.int32).min
+
+    def log_progress_overwrite(self) -> None:
+        prev = lg.StreamHandler.terminator
+        lg.StreamHandler.terminator = '\r'
+        self.log_progress()
+        lg.StreamHandler.terminator = prev
+        return
+
+    def log_progress(self) -> None:
+        lg.info(f'    ...processed {human_format(self._total_fragments)} fragments')
+        return
+    @property
+    def total_fragments(self):
+        return self._total_fragments
+
+    @property
+    def paired(self):
+        return self._paired
+
+    @property
+    def single(self):
+        return self._single
+
+    @property
+    def unmapped(self):
+        return self._unmapped
+
+    @property
+    def noloc_ambig(self):
+        return self._noloc_ambig
+
+    @property
+    def noloc_unique(self):
+        return self._noloc_unique
+
+    @property
+    def loc_ambig(self):
+        return self._loc_ambig
+
+    @property
+    def loc_unique(self):
+        return self._loc_unique
+
+    @property
+    def minAS(self):
+        return self._minAS
+
+    @property
+    def maxAS(self):
+        return self._maxAS
+
+    def update(self, finfo: FragmentInfo):
+        """
+
+        Parameters
+        ----------
+        is_mapped
+        is_ambig
+        has_overlap
+        scores
+
+        Returns
+        -------
+
+        """
+        self.increment_fragments()
+
+        if finfo.paired:
+            self._paired += 1
+        else:
+            self._single += 1
+
+        if not finfo.mapped:
+            self._unmapped += 1
+            return
+
+        if finfo.error:
+            self.error[finfo.error] += 1
+            return
+
+        assert finfo.ambig is not None
+        assert finfo.overlap is not None
+        assert finfo.scores is not None
+
+        if finfo.ambig:
+            if finfo.overlap:
+                self._loc_ambig += 1
+            else:
+                self._noloc_ambig += 1
+        else:
+            if finfo.overlap:
+                self._loc_unique += 1
+            else:
+                self._noloc_unique += 1
+
+        self._maxAS = max(self._maxAS, *finfo.scores)
+        self._minAS = min(self._minAS, *finfo.scores)
+        return
+
+    def increment_fragments(self):
+        self._total_fragments += 1
+        if self.progress and self._total_fragments % self.progress == 0:
+            self.log_progress()
+        return
+    def log(self, loglev=lg.INFO):
+        nmapped = self.total_fragments - self.unmapped
+        nunique = self.loc_unique + self.noloc_unique
+        nambig = self.loc_ambig + self.noloc_ambig
+        nloc = self.loc_ambig + self.loc_unique
+        lg.log(loglev, "Alignment Summary:")
+        lg.log(loglev, f'    {self.total_fragments} total fragments.')
+        lg.log(loglev, f'        {self.paired} were paired-end.')
+        lg.log(loglev, f'        {self.single} were single-emd.')
+        lg.log(loglev, f'        {self.unmapped} failed to map.')
+        lg.log(loglev, '--')
+        lg.log(loglev, f'    {nmapped} mapped; of these')
+        lg.log(loglev, f'        {nunique} had one unique alignment.')
+        lg.log(loglev, f'        {nambig} had multiple alignments.')
+        lg.log(loglev, '--')
+        lg.log(loglev, f'    {nloc} overlapped TE features; of these')
+        lg.log(loglev, f'        {self.loc_unique} map to one locus.')
+        lg.log(loglev, f'        {self.loc_ambig} map to multiple loci.')
+        if self.error:
+            nerr = sum(self.error.values())
+            lg.log(loglev, '--')
+            lg.log(loglev, f'    {nerr} fragments had errors')
+            for k,v in self.error.most_common():
+                lg.log(loglev, f'        {v} fragments: {k}.')
+        lg.log(loglev, '--')
+        lg.log(loglev, f'    Alignment score range: [{self._minAS} - {self._maxAS}].')
+        return
+
+    def to_dataframe(self):
+        cols = {
+            'converged': self.converged,
+            'reached_max': self.reached_max,
+            'nparams': self.nparams,
+            'nobs': self.nobs,
+            'nfeats': self.nfeats,
+            'epsilon': self.epsilon,
+            'max_iter': self.max_iter,
+        }
+        return pd.DataFrame({
+            'stage': self.infotype,
+            'var': cols.keys(),
+            'value': cols.values(),
+        })
+    # @property
+    # def single_unmapped(self):
+    #     return self._single_unmapped
+    # @property
+    # def paired_unmapped(self):
+    #     return self._paired_unmapped
+    # @property
+    # def single_mapped_noloc(self):
+    #     return self._single_mapped_noloc
+    # @property
+    # def paired_mapped_noloc(self):
+    #     return self._paired_mapped_noloc
+    # @property
+    # def single_mapped_loc(self):
+    #     return self._single_mapped_loc
+    # @property
+    # def paired_mapped_loc(self):
+    #     return self._paired_mapped_loc
+
+
 
 class FitInfo(GenericInfo):
     """
@@ -35,6 +280,7 @@ class FitInfo(GenericInfo):
     final_lnl: float | None
 
     def __init__(self, tl: Optional['TelescopeLikelihood'] = None):
+        super().__init__()
         self.converged = False
         self.reached_max = False
         self.nparams = 2  # Estimating two parameters for each feat
@@ -59,6 +305,23 @@ class FitInfo(GenericInfo):
     def fitted(self) -> bool:
         return self.converged | self.reached_max
 
+    def to_dataframe(self):
+        cols = {
+            'converged': self.converged,
+            'reached_max': self.reached_max,
+            'nparams': self.nparams,
+            'nobs': self.nobs,
+            'nfeats': self.nfeats,
+            'epsilon': self.epsilon,
+            'max_iter': self.max_iter,
+        }
+        return pd.DataFrame({
+            'stage': self.infotype,
+            'var': cols.keys(),
+            'value': cols.values(),
+        })
+
+
 class PoolInfo(GenericInfo):
     """
 
@@ -70,6 +333,7 @@ class PoolInfo(GenericInfo):
     _total_lnl: Optional[np.floating]
 
     def __init__(self):
+        super().__init__()
         self.nmodels = 0
         self.models_info = {}
         self._total_params = None
@@ -142,6 +406,22 @@ class PoolInfo(GenericInfo):
         lg.log(loglev, f'    AIC: {self.AIC()}')
         lg.log(loglev, f'    BIC: {self.BIC()}')
 
+    def to_dataframe(self):
+        cols = {
+            'nmodels': self.nmodels,
+            'fitted_models': self.fitted_models,
+            'total_obs': self.total_obs,
+            'total_params': self.total_params,
+            'lnL': self.total_lnl,
+            'AIC': self.AIC(),
+            'BIC': self.BIC(),
+        }
+        return pd.DataFrame({
+            'stage': self.infotype,
+            'var': cols.keys(),
+            'value': cols.values(),
+        })
+
 
 class ReassignInfo(GenericInfo):
     """
@@ -154,6 +434,7 @@ class ReassignInfo(GenericInfo):
     ambiguous_dist: typing.Counter | None
 
     def __init__(self, reassign_mode: str):
+        super().__init__()
         self.reassign_mode = reassign_mode
         self.assigned = 0
         self.ambiguous = 0
@@ -197,6 +478,21 @@ class ReassignInfo(GenericInfo):
         for _l in self.format(False):
             lg.log(loglev, f'  {_l}')
 
+    def to_dataframe(self):
+        cols = {
+            'assigned': self.assigned,
+            'ambiguous': self.ambiguous,
+            'unaligned': self.unaligned,
+            'total_params': self.total_params,
+            'lnL': self.total_lnl,
+            'AIC': self.AIC(),
+            'BIC': self.BIC(),
+        }
+        return pd.DataFrame({
+            'stage': self.infotype,
+            'var': cols.keys(),
+            'value': cols.values(),
+        })
 
 class UMIInfo(GenericInfo):
     num_umi: int
@@ -211,6 +507,7 @@ class UMIInfo(GenericInfo):
     nexclude: int
 
     def __init__(self):
+        super().__init__()
         self.num_umi = -1
         self.uni_umi = -1
         self.dup_umi = -1

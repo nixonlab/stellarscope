@@ -88,8 +88,9 @@ class LoadAlignments(Stage):
 
     def run(self, opts, st_obj: Stellarscope, annot: BaseAnnotation):
         self.startrun()
-        st_obj.load_alignment(annot)
-        st_obj.print_summary(lg.INFO)
+        alninfo = st_obj.load_alignment(annot)
+        # st_obj.print_summary(lg.INFO)
+        alninfo.log()
         self.endrun()
         st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
         return
@@ -157,6 +158,7 @@ class FitModel(Stage):
         self.startrun()
         st_model, poolinfo = st_obj.fit_pooling_model()
         poolinfo.log()
+        # t = poolinfo.to_dataframe()
         self.endrun()
         return st_model
 

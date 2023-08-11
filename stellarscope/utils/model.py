@@ -37,7 +37,7 @@ from .sparse_plus import row_identity_matrix as rowid
 from .sparse_plus import bool_inv
 from .sparse_plus import divide_extp
 from .sparse_plus import parallel_groupby_sum
-from .statistics import FitInfo, PoolInfo, ReassignInfo, UMIInfo
+from .statistics import FragmentInfo, AlignInfo, FitInfo, PoolInfo, ReassignInfo, UMIInfo
 
 from .colors import c2str, D2PAL, GPAL
 from .helpers import str2int, region_iter, phred
@@ -175,6 +175,9 @@ class Telescope(object):
         return ret % 4294967295
 
     def load_alignment(self, annotation):
+        raise DeprecationWarning('''
+            Superseced by Stellarscope.load_alignment
+        ''')
         self.run_info['annotated_features'] = len(annotation.loci)
         self.feature_length = annotation.feature_length().copy()
 
@@ -199,6 +202,9 @@ class Telescope(object):
             self.run_info[f] = alninfo[f]
 
     def _load_parallel(self, annotation):
+        raise DeprecationWarning('''
+            Superseced by Stellarscope.load_alignment
+        ''')
         lg.info('Loading alignments in parallel...')
         regions = region_iter(self.ref_names,
                               self.ref_lengths,
@@ -237,6 +243,9 @@ class Telescope(object):
                 yield (int(code), rid, fid, int(ascr), int(alen))
 
     def _load_sequential(self, annotation):
+        raise DeprecationWarning('''
+            Superseced by Stellarscope.load_alignment
+        ''')
         _update_sam = self.opts.updated_sam
         _nfkey = self.opts.no_feature_key
         _omode, _othresh = self.opts.overlap_mode, self.opts.overlap_threshold
@@ -250,6 +259,7 @@ class Telescope(object):
 
         """ Load unsorted reads """
         alninfo = Counter()
+        _alninfo = AlignInfo(100)
         _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
             pysam.set_verbosity(_pysam_verbosity)
@@ -261,6 +271,7 @@ class Telescope(object):
             _minAS, _maxAS = BIG_INT, -BIG_INT
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
                 alninfo['total_fragments'] += 1
+                _alninfo += 1
                 if alninfo['total_fragments'] % 500000 == 0:
                     log_progress(alninfo['total_fragments'])
 
@@ -1510,7 +1521,7 @@ class Stellarscope(Telescope):
         return
 
 
-    def load_alignment(self, annotation: annotation.BaseAnnotation):
+    def load_alignment(self, annotation: annotation.BaseAnnotation) -> AlignInfo:
         """
 
         Parameters
@@ -1522,12 +1533,11 @@ class Stellarscope(Telescope):
 
         """
 
-        def mapping_to_matrix(mappings, alninfo):
+        def mapping_to_matrix(mappings):
             self.shape = (len(self.read_index), len(self.feat_index))
 
             # rescale function to positive integers > 0
-            lg.debug(f'score range: ({alninfo["minAS"]}, {alninfo["maxAS"]})')
-            rescale = lambda s: (s - alninfo['minAS'] + 1)
+            rescale = lambda s: (s - alninfo.minAS + 1)
 
             _m_dok = scipy.sparse.dok_matrix(self.shape, dtype=np.uint16)
 
@@ -1556,14 +1566,12 @@ class Stellarscope(Telescope):
 
         ''' Load alignment sequentially using 1 CPU '''
         maps, alninfo = self._load_sequential(annotation)
-        lg.debug(str(alninfo))
 
         ''' Convert alignment to sparse matrix '''
-        mapping_to_matrix(maps, alninfo)
-        lg.debug(str(alninfo))
-
-        for k, v in alninfo.items():
-            self.run_info[k] = v
+        mapping_to_matrix(maps)
+        return alninfo
+        # for k, v in alninfo.items():
+        #     self.run_info[k] = v
 
     def _load_sequential(self, annotation):
         """ Load queryname sorted BAM sequentially
@@ -1575,7 +1583,8 @@ class Stellarscope(Telescope):
 
         """
 
-        def skip_fragment():
+        def skip_fragment(reason: Optional[str] = None):
+            _alninfo.update(_finfo)
             if self.opts.updated_sam:
                 [p.write(bam_u) for p in alns]
 
@@ -1633,6 +1642,9 @@ class Stellarscope(Telescope):
 
         # Initialize variables for function
         alninfo = OrderedDict()
+        # _alninfo = AlignInfo(self.opts.progress)
+        _alninfo = AlignInfo(500)
+
         alninfo['total_fragments'] = 0  # total number of fragments
         for code, desc in ALNCODES:
             alninfo[code] = 0       # alignment code
@@ -1655,6 +1667,7 @@ class Stellarscope(Telescope):
             # Iterate over fragments
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
                 alninfo['total_fragments'] += 1
+                _finfo = FragmentInfo()
 
                 # Write progress to console or log
                 if self.opts.progress and \
@@ -1664,12 +1677,17 @@ class Stellarscope(Telescope):
                 ''' Count code '''
                 _code = ALNCODES[ci][0]
                 alninfo[_code] += 1
+                _finfo.add_code(_code)
 
                 ''' Check whether fragment is mapped '''
-                if _code == 'SU' or _code == 'PU':
-                    # if self.opts.updated_sam: alns[0].write(bam_u)
+                if not _finfo.mapped:
                     skip_fragment()
                     continue
+
+                # if _code == 'SU' or _code == 'PU':
+                #     # if self.opts.updated_sam: alns[0].write(bam_u)
+                #     skip_fragment()
+                #     continue
 
                 ''' Get alignment barcode and UMI '''
                 _cur_qname = alns[0].query_name
@@ -1679,30 +1697,36 @@ class Stellarscope(Telescope):
 
                 ''' Validate barcode and UMI '''
                 if _cur_bcode is None:
+                    _finfo.error = "Missing CB"
                     skip_fragment()
                     continue
 
                 if self.whitelist:
                     if _cur_bcode not in self.whitelist:
+                        _finfo.error = "CB not in whitelist"
                         skip_fragment()
                         continue
 
                 if not self.opts.ignore_umi and _cur_umi is None:
+                    _finfo.error = "Missing UB"
                     skip_fragment()
                     continue
 
                 ''' Fragment is ambiguous if multiple mappings'''
                 _mapped = [a for a in alns if not a.is_unmapped]
                 _ambig = len(_mapped) > 1
+                _finfo.ambig = _ambig
 
                 ''' Update min and max scores '''
                 _scores = [a.alnscore for a in _mapped]
                 alninfo['minAS'] = min(alninfo['minAS'], *_scores)
                 alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
+                _finfo.scores = _scores
 
                 ''' Check whether fragment overlaps annotation '''
                 overlap_feats = list(map(assign_func, _mapped))
                 has_overlap = any(f != _nfkey for f in overlap_feats)
+                _finfo.overlap = has_overlap
 
                 ''' Fragment has no overlap, skip '''
                 if not has_overlap:
@@ -1715,6 +1739,7 @@ class Stellarscope(Telescope):
 
                 ''' Fragment overlaps with annotation '''
                 alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
+                _alninfo.update(_finfo)
 
                 ''' Find the best alignment for each locus '''
                 for m in process_fragment(_mapped, overlap_feats):
@@ -1725,11 +1750,12 @@ class Stellarscope(Telescope):
 
         ''' Loading complete '''
         lg.info('Loading alignments complete.')
+        _alninfo.log()
         if self.opts.updated_sam:
             bam_u.close()
             bam_t.close()
 
-        return _mappings, alninfo
+        return _mappings, _alninfo
 
     def dedup_umi(self, output_report=True, summary=True):
         """
@@ -2022,6 +2048,11 @@ class Stellarscope(Telescope):
             `model.output_report_old() is replaced by `model.output_report()`
             which was implemented in be33986.
         """
+        raise DeprecationWarning('''
+            deprecated:: be33986
+                `model.output_report_old() is replaced by `model.output_report()`
+                which was implemented in be33986.
+        ''')
         _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
@@ -2168,6 +2199,9 @@ class Stellarscope(Telescope):
             outsam.close()
 
     def print_summary(self, loglev=lg.WARNING):
+        raise PendingDeprecationWarning('''
+            This is expected to be replaced by statistics.AlignInfo.log()
+        ''')
         _info = self.run_info
 
         ''' Alignment summary '''
