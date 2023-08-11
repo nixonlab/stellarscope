@@ -15,10 +15,11 @@ import subprocess
 
 from . import utils
 from .utils.helpers import format_minutes as fmtmins
+from stellarscope import StellarscopeError
 
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2021 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
 
 class StellarscopeCellSortOptions(utils.OptionsBase):
@@ -30,6 +31,17 @@ class StellarscopeCellSortOptions(utils.OptionsBase):
     def __init__(self, args):
         super().__init__(args)
 
+def check_samtools_version(minver: str = "1.16"):
+    from packaging import version
+    output = subprocess.check_output('samtools --version', shell=True)
+    prg, ver = output.decode().split('\n')[0].split()
+    if prg != 'samtools':
+        raise ValueError("Unexpected output for `samtools --version`")
+    if version.parse(ver) < version.parse(minver):
+        msg = f"Minimum samtools version is {minver}; found {ver}"
+        raise StellarscopeError(msg)
+    return
+
 def run(args):
     """
 
@@ -39,6 +51,7 @@ def run(args):
     Returns:
 
     """
+    check_samtools_version()
     opts = StellarscopeCellSortOptions(args)
     utils.configure_logging(opts)
     lg.debug('\n{}\n'.format(opts))
