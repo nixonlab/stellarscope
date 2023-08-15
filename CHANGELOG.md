@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
   features.
 - **Parallel barcode aggregation.** Counts for cell barcodes can be aggregated
   in parallel using `--nproc` option.
+- **Renamed `--whitelist` to `--filtered_bc`.** The `--whitelist` option is 
+  still available for backwards compatibility. 
 
 ### Fixed
 - **Verify `samtools` version.** `stellarscope cellsort` requires that 
