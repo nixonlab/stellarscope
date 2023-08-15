@@ -333,9 +333,9 @@ class Telescope(object):
 
         if self.single_cell:
             _unique_read_barcodes = set(_all_read_barcodes)
-            if self.whitelist is not None:
+            if self.filtlist is not None:
                 self.barcodes = list(
-                    _unique_read_barcodes.intersection(self.whitelist))
+                    _unique_read_barcodes.intersection(self.filtlist))
                 lg.info(
                     f'{len(_unique_read_barcodes)} unique barcodes found in the alignment file, '
                     f'{len(self.barcodes)} of which were also found in the barcode file.')
@@ -1337,7 +1337,7 @@ class Stellarscope(Telescope):
     read_umi_map: dict[str, str]
     bcode_ridx_map: DefaultDict[str, set[int]]
     bcode_umi_map: DefaultDict[str, set[int]]
-    whitelist: dict[str, int]
+    filtlist: dict[str, int]
     bcode_ctype_map: dict[str, str]
     ctype_bcode_map: DefaultDict[set[str]]
     celltypes: list[str]
@@ -1381,7 +1381,7 @@ class Stellarscope(Telescope):
         self.bcode_ridx_map = defaultdict(set)  # {barcode (str): read_indexes (:obj:`set` of int)}
         self.bcode_umi_map = defaultdict(list)  # {barcode (str): umis (:obj:`set` of str)}
 
-        self.whitelist = {}                     # {barcode (str): index (int)}
+        self.filtlist = {}                     # {barcode (str): index (int)}
 
         ''' Instance variables for pooling mode = "celltype" '''
         self.bcode_ctype_map = {}
@@ -1395,20 +1395,20 @@ class Stellarscope(Telescope):
 
         return
 
-    def load_whitelist(self):
-        if self.whitelist:
-            lg.warn(f'Whitelist exists with {len(self.whitelist)} barcodes.')
-            lg.warn(f'Provided whitelist ({self.opts.whitelist}) not loaded')
+    def load_filtlist(self):
+        if self.filtlist:
+            lg.warn(f'Filter BC list exists ({len(self.filtlist)} barcodes).')
+            lg.warn(f'Provided list ({self.opts.filtered_bc}) not loaded')
             return
-        with open(self.opts.whitelist, 'r') as fh:
+        with open(self.opts.filtered_bc, 'r') as fh:
             _bc_gen = (l.split('\t')[0].strip() for l in fh)
             # Check first line is valid barcode and not column header
             _bc = next(_bc_gen)
             if re.match('^[ACGTacgt]+$', _bc):
-                _ = self.whitelist.setdefault(_bc, len(self.whitelist))
+                _ = self.filtlist.setdefault(_bc, len(self.filtlist))
             # Add the rest without checking
             for _bc in _bc_gen:
-                _ = self.whitelist.setdefault(_bc, len(self.whitelist))
+                _ = self.filtlist.setdefault(_bc, len(self.filtlist))
         return
 
 
@@ -1604,9 +1604,9 @@ class Stellarscope(Telescope):
                     skip_fragment("Missing CB")
                     continue
 
-                if self.whitelist:
-                    if _cur_bcode not in self.whitelist:
-                        skip_fragment("CB not in whitelist")
+                if self.filtlist:
+                    if _cur_bcode not in self.filtlist:
+                        skip_fragment("CB not in filtered BC list")
                         continue
 
                 if not self.opts.ignore_umi and _cur_umi is None:
@@ -1860,8 +1860,8 @@ class Stellarscope(Telescope):
                 _meta['checkpoint'] = self.opts.checkpoint
             if hasattr(self.opts, 'gtffile'):
                 _meta['gtffile'] = self.opts.gtffile
-            if hasattr(self.opts, 'whitelist'):
-                _meta['whitelist'] = self.opts.whitelist
+            if hasattr(self.opts, 'filtered_bc'):
+                _meta['filtered_bc'] = self.opts.filtered_bc
             _meta['pooling_mode'] = self.opts.pooling_mode
             _meta['reassign_mode'] = reassign_mode
             if self.opts.ignore_umi:
@@ -1872,8 +1872,8 @@ class Stellarscope(Telescope):
             return '\n '.join(f'{k}: {v}' for k, v in _meta.items())
 
         ''' Final order for barcodes and features'''
-        if self.whitelist:
-            bc_list = sorted(self.whitelist, key=self.whitelist.get)
+        if self.filtlist:
+            bc_list = sorted(self.filtlist, key=self.filtlist.get)
         else:
             bc_list = sorted(self.bcode_ridx_map.keys())
         numbc = len(bc_list)
