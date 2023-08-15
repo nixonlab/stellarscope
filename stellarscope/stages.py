@@ -106,6 +106,14 @@ class LoadCheckpoint(Stage):
     def run(self, opts: 'StellarscopeResumeOptions'):
         self.startrun()
         st_obj = Stellarscope.load(opts.checkpoint)
+
+        # Fix for legacy checkpoints
+        if not hasattr(st_obj, 'filtlist'):
+            if hasattr(st_obj, 'whitelist'):
+                st_obj.filtlist = st_obj.whitelist
+            else:
+                raise StellarscopeError('Checkpoint has no filtlist')
+
         prev_opts = st_obj.opts
         opts.resolve_options(prev_opts)
         opts.init_rng(prev_opts)
