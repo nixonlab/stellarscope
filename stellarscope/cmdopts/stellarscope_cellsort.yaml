@@ -3,10 +3,10 @@
         positional: True
         help: Input alignment file. Alignment file can be in SAM or BAM
           format.
-    - barcodes:
+    - filtered_bc:
         positional: True
         help: Path to file containing barcodes passing filter.
-    - ncpu:
+    - nproc:
         default: 1
         type: int
         help: Number of cores to use.

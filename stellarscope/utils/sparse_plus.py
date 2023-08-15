@@ -56,10 +56,6 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [ 0.          0.          1.        ]
              [ 0.26666667  0.33333333  0.4       ]]
         """
-        # return self._norm_loop(axis)
-        return self._norm(axis)
-
-    def _norm(self, axis=None):
         if axis is None:
             return self.multiply(1. / self.sum())
         elif axis == 0:
@@ -68,6 +64,24 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             return self.multiply(_recip0(self.sum(1)))
 
     def _norm_loop(self, axis=None):
+        """
+
+        Parameters
+        ----------
+        axis
+
+        Returns
+        -------
+
+        .. deprecated::
+            This implementation is considerably slower than the solution
+            using multiply, code is here for reference purposes.
+
+        """
+        raise DeprecationWarning('''
+            This implementation is considerably slower than the solution
+            using multiply, code is here for reference purposes.            
+        ''')
         if axis is None:
             ret = self.copy().astype(np.float)
             ret.data /= sum(ret)
@@ -85,11 +99,20 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
     def scale(self, axis=None):
         """ Scale matrix so values are between 0 and 1
 
-        Args:
-            axis:
+        Parameters
+        ----------
+        axis : Optional[int]
+            Axis along which to scale values. The default, `axis=None`,
+            scales by the maximum value of the input array. `axis=1` scales
+            each row.
 
-        Returns:
-        Examples:
+        Returns
+        -------
+            csr_matrix_plus
+                Sparse CSR matrix where values are scaled by the max value
+
+        Examples
+        --------
             >>> M = csr_matrix_plus([[10, 0, 20],[0, 0, 30],[40, 50, 60]])
             >>> print(M.scale().toarray())
             [[ 0.1  0.   0.2]
@@ -100,27 +123,31 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [ 0.   0.   1. ]
              [ 0.4  0.5  1. ]]
         """
-        return self._scale(axis)
-
-    def _scale(self, axis=None):
         if self.nnz == 0: return self
         if axis is None:
             return self.multiply(1. / self.max())
-            # ret = self.copy().astype(np.float)
-            # return ret / ret.max()
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
             return self.multiply(_recip0(self.max(1).toarray()))
 
-    def binmax(self, axis=None):
-        """ Set max values to 1 and others to 0
+    def binmax(self, axis: Optional[int] = None):
+        """ Return binary matrix where location of max value is 1, 0 otherwise
 
-        Args:
-            axis:
+        Parameters
+        ----------
+        axis : Optional[int]
+            Axis along which maximum is determined. The default, `axis=None`,
+            will use the max of the input array. `axis=1` assigns 1 to the
+            maximum value or values for each row.
 
-        Returns:
-        Examples:
+        Returns
+        -------
+            csr_matrix_plus
+                Sparse CSR matrix where location(s) of max value == 1
+
+        Examples
+        --------
             >>> M = csr_matrix_plus([[6, 0, 2],[0, 0, 3],[4, 5, 6]])
             >>> print(M.binmax().toarray())
             [[1 0 0]
@@ -132,7 +159,12 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [0 0 1]]
         """
         if axis is None:
-            raise NotImplementedError
+            d_max = max(self.data)
+            _data = np.where(self.data == d_max, 1, 0)
+            ret = type(self)((_data, self.indices.copy(), self.indptr.copy()),
+                              shape=self.shape)
+            ret.eliminate_zeros()
+            return ret
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
@@ -146,6 +178,16 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             return ret
 
     def count(self, axis=None):
+        """
+
+        Parameters
+        ----------
+        axis
+
+        Returns
+        -------
+
+        """
         if axis is None:
             raise NotImplementedError
         elif axis == 0:

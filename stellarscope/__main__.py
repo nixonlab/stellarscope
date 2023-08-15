@@ -122,14 +122,14 @@ def stellarscope():
     cellsort_parser.set_defaults(func=stellarscope_cellsort.run)
 
     ''' Parser for merge '''
-    merge_parser = subparsers.add_parser(
-        'merge',
-        description='''Merge stellarscope-generated single-cell transposable element counts with a 
-        single-cell gene count matrix''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
-    merge_parser.set_defaults(func=stellarscope_merge.run)
+    # merge_parser = subparsers.add_parser(
+    #     'merge',
+    #     description='''Merge stellarscope-generated single-cell transposable element counts with a
+    #     single-cell gene count matrix''',
+    #     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    # )
+    # stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
+    # merge_parser.set_defaults(func=stellarscope_merge.run)
 
     ''' Parser for test '''
     test_parser = subparsers.add_parser('test',

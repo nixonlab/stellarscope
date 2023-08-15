@@ -42,7 +42,6 @@ class Stage(object):
         lg.info('')
 
 
-
 class InitStellarscope(Stage):
     def __init__(self, stagenum: int):
         self.stagenum = stagenum

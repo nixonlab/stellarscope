@@ -60,3 +60,5 @@ stellarscope/data/*
 !stellarscope/data/stellarscope_report.tsv
 stellarscope-checkpoint.npz
 stellarscope/optimize/*
+.ipynb_checkpoints
+stellarscope/.ipynb_checkpoints

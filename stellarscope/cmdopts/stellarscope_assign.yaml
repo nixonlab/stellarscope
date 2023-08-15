@@ -46,11 +46,6 @@
         help: |
             Used internally to represent alignments. Must be different from all
             from all other feature names used in the annotation.
-    - ncpu:
-        default: 1
-        type: int
-        help: Number of cores to use. (Multiple cores not supported yet).
-        hide: True
     - nproc:
         default: 1
         type: int
@@ -96,11 +91,6 @@
         default: 1000000
         help: Frequency of alignment processing progress message. Set to 0
               to suppress message.
-    - devmode:
-        action: store_true
-        help: |
-            Run in development mode. Outputs noisy debugging messages and 
-            writes intermediate data structures to file.
 - Run Modes:
     - pooling_mode:
         type: str
@@ -245,7 +235,7 @@
     - theta_prior:
         type: int
         default: 200000
-        help: >
+        help: |
               Prior on θ. Equivalent to adding n non-unique reads.
               NOTE: It is recommended to set this prior to a large value. This
               increases the penalty for non-unique reads and improves accuracy.
