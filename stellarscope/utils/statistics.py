@@ -17,32 +17,46 @@ from . import human_format
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
-def property_names(cls):
-    [p for p in dir(cls) if isinstance(getattr(cls, p), property)]
+def property_names(obj):
+    cls = obj.__class__
+    return [p for p in dir(cls) if isinstance(getattr(cls, p), property)]
 
 class GenericInfo(object):
     """
 
     """
-    _infotype: str
+    infotype: str
 
     def __init__(self):
-        self._infotype = self.__class__.__name__
-
-    @property
-    def infotype(self):
-        return self._infotype
+        self.infotype = self.__class__.__name__
 
     def __str__(self):
         return '\n'.join(f'{k}\t{v}' for k,v in vars(self).items())
 
     def to_dataframe(self):
-        property_names(self)
+        vars = property_names(self)
         return pd.DataFrame({
             'stage': self.infotype,
-            'var': 'name',
-            'value': 'value'
-        })
+            'mode': "",
+            'var': vars,
+            'value': [getattr(self, v) for v in vars]
+        },
+            dtype=object
+        )
+
+from ..annotation import BaseAnnotation
+class AnnotationInfo(GenericInfo):
+    _num_loci: int
+    def __init__(self, annot: BaseAnnotation):
+        super().__init__()
+        self._num_loci = len(annot.loci)
+    @property
+    def num_loci(self):
+        return self._num_loci
+    def log(self, loglev=lg.INFO):
+        lg.log(loglev, f'  Loaded {self.num_loci} loci')
+        return
+
 
 class FragmentInfo(GenericInfo):
     paired: Optional[bool]
@@ -63,8 +77,6 @@ class FragmentInfo(GenericInfo):
     def add_code(self, code):
         self.paired = code[0] == 'P'
         self.mapped = code[1] == 'M' or code[1] == 'X'
-
-
 
 
 class AlignInfo(GenericInfo):
@@ -201,6 +213,7 @@ class AlignInfo(GenericInfo):
         if self.progress and self._total_fragments % self.progress == 0:
             self.log_progress()
         return
+
     def log(self, loglev=lg.INFO):
         nmapped = self.total_fragments - self.unmapped
         nunique = self.loc_unique + self.noloc_unique
@@ -228,41 +241,6 @@ class AlignInfo(GenericInfo):
         lg.log(loglev, '--')
         lg.log(loglev, f'    Alignment score range: [{self._minAS} - {self._maxAS}].')
         return
-
-    def to_dataframe(self):
-        cols = {
-            'converged': self.converged,
-            'reached_max': self.reached_max,
-            'nparams': self.nparams,
-            'nobs': self.nobs,
-            'nfeats': self.nfeats,
-            'epsilon': self.epsilon,
-            'max_iter': self.max_iter,
-        }
-        return pd.DataFrame({
-            'stage': self.infotype,
-            'var': cols.keys(),
-            'value': cols.values(),
-        })
-    # @property
-    # def single_unmapped(self):
-    #     return self._single_unmapped
-    # @property
-    # def paired_unmapped(self):
-    #     return self._paired_unmapped
-    # @property
-    # def single_mapped_noloc(self):
-    #     return self._single_mapped_noloc
-    # @property
-    # def paired_mapped_noloc(self):
-    #     return self._paired_mapped_noloc
-    # @property
-    # def single_mapped_loc(self):
-    #     return self._single_mapped_loc
-    # @property
-    # def paired_mapped_loc(self):
-    #     return self._paired_mapped_loc
-
 
 
 class FitInfo(GenericInfo):
@@ -305,23 +283,6 @@ class FitInfo(GenericInfo):
     def fitted(self) -> bool:
         return self.converged | self.reached_max
 
-    def to_dataframe(self):
-        cols = {
-            'converged': self.converged,
-            'reached_max': self.reached_max,
-            'nparams': self.nparams,
-            'nobs': self.nobs,
-            'nfeats': self.nfeats,
-            'epsilon': self.epsilon,
-            'max_iter': self.max_iter,
-        }
-        return pd.DataFrame({
-            'stage': self.infotype,
-            'var': cols.keys(),
-            'value': cols.values(),
-        })
-
-
 class PoolInfo(GenericInfo):
     """
 
@@ -331,14 +292,19 @@ class PoolInfo(GenericInfo):
     _total_params: Optional[int]
     _total_obs: Optional[int]
     _total_lnl: Optional[np.floating]
+    _AIC: Optional[np.floating]
+    _BIC: Optional[np.floating]
 
-    def __init__(self):
+    def __init__(self, pooling_mode: Optional[str] = None):
         super().__init__()
+        self.pooling_mode = pooling_mode
         self.nmodels = 0
         self.models_info = {}
         self._total_params = None
         self._total_obs = None
         self._total_lnl = None
+        self._AIC = None
+        self._BIC = None
 
     @property
     def fitted_models(self) -> int:
@@ -369,6 +335,7 @@ class PoolInfo(GenericInfo):
                 self._total_params += fitinfo.nparams * fitinfo.nfeats
         return self._total_params
 
+    @property
     def AIC(self) -> np.floating:
         """ Calculate Akaike Information Criterion
 
@@ -381,8 +348,11 @@ class PoolInfo(GenericInfo):
         np.floating
             Akaike information criterion for pooling model
         """
-        return 2 * self.total_params - (2 * self.total_lnl)
+        if self._AIC is None:
+            self._AIC = 2 * self.total_params - (2 * self.total_lnl)
+        return self._AIC
 
+    @property
     def BIC(self) -> np.floating:
         """ Calculate Bayesian Information Criterion
 
@@ -395,32 +365,39 @@ class PoolInfo(GenericInfo):
         np.floating
             Baysian information criterion for pooling model
         """
-        return \
-            self.total_params * np.log(self.total_obs) - (2 * self.total_lnl)
+        if self._BIC is None:
+            self._BIC = self.total_params * np.log(self.total_obs) - (2 * self.total_lnl)
+        return self._BIC
+
 
     def log(self, loglev=lg.INFO):
         lg.log(loglev, f'Complete data log-likelihood (lnL): {self.total_lnl}')
         lg.log(loglev, f'  Number of models estimated: {self.fitted_models}')
         lg.log(loglev, f'  Total observations: {self.total_obs}')
         lg.log(loglev, f'  Total parameters estimated: {self.total_params}')
-        lg.log(loglev, f'    AIC: {self.AIC()}')
-        lg.log(loglev, f'    BIC: {self.BIC()}')
+        lg.log(loglev, f'    AIC: {self.AIC}')
+        lg.log(loglev, f'    BIC: {self.BIC}')
 
     def to_dataframe(self):
-        cols = {
-            'nmodels': self.nmodels,
-            'fitted_models': self.fitted_models,
-            'total_obs': self.total_obs,
-            'total_params': self.total_params,
-            'lnL': self.total_lnl,
-            'AIC': self.AIC(),
-            'BIC': self.BIC(),
-        }
-        return pd.DataFrame({
-            'stage': self.infotype,
-            'var': cols.keys(),
-            'value': cols.values(),
-        })
+        ret = super().to_dataframe()
+        ret['mode'] = self.pooling_mode
+        return ret
+
+    # def to_dataframe(self):
+    #     cols = {
+    #         'nmodels': self.nmodels,
+    #         'fitted_models': self.fitted_models,
+    #         'total_obs': self.total_obs,
+    #         'total_params': self.total_params,
+    #         'lnL': self.total_lnl,
+    #         'AIC': self.AIC(),
+    #         'BIC': self.BIC(),
+    #     }
+    #     return pd.DataFrame({
+    #         'stage': self.infotype,
+    #         'var': cols.keys(),
+    #         'value': cols.values(),
+    #     })
 
 
 class ReassignInfo(GenericInfo):
@@ -428,20 +405,56 @@ class ReassignInfo(GenericInfo):
 
     """
     reassign_mode: str
-    assigned: int
-    ambiguous: int
-    unaligned: int | None
+    _assigned: int
+    _ambiguous: int
+    _unaligned: int | None
     ambiguous_dist: typing.Counter | None
+
+    explanations = {
+        'best_exclude': 'remain ambiguous -> excluded',
+        'best_conf': 'are low confidence -> excluded',
+        'best_random': 'remain ambiguous -> randomly assigned',
+        'best_average': 'remain ambiguous -> divided evenly',
+        'initial_unique': 'were initially ambiguous -> discarded',
+        'initial_random': 'were initially ambiguous -> randomly assigned',
+        'total_hits': 'initially had multiple alignments',
+    }
 
     def __init__(self, reassign_mode: str):
         super().__init__()
         self.reassign_mode = reassign_mode
-        self.assigned = 0
-        self.ambiguous = 0
-        self.unaligned = None
+        self.explanation = self.explanations[reassign_mode]
+        self._assigned = 0
+        self._ambiguous = 0
+        self._unaligned = None
         self.ambiguous_dist = None
 
-    def format(self, include_mode=True):
+
+    @property
+    def assigned(self):
+        return self._assigned
+
+    @assigned.setter
+    def assigned(self, val: int):
+        self._assigned = val
+
+    @property
+    def ambiguous(self):
+        return self._ambiguous
+
+    @ambiguous.setter
+    def ambiguous(self, val: int):
+        self._ambiguous = val
+
+    @property
+    def unaligned(self):
+        return self._unaligned
+
+    @unaligned.setter
+    def unaligned(self, val: int):
+        self._unaligned = val
+
+    def format(self, include_mode = True, show_unaligned = False):
         _m = self.reassign_mode
         prefix = f'{_m} - ' if include_mode else ''
 
@@ -455,19 +468,10 @@ class ReassignInfo(GenericInfo):
             ret.append(f'{prefix}{self.assigned} assigned.')
 
         # ambiguous
-        _explain = {
-            'best_exclude': 'remain ambiguous -> excluded',
-            'best_conf': 'are low confidence -> excluded',
-            'best_random': 'remain ambiguous -> randomly assigned',
-            'best_average': 'remain ambiguous -> divided evenly',
-            'initial_unique': 'were initially ambiguous -> discarded',
-            'initial_random': 'were initially ambiguous -> randomly assigned',
-            'total_hits': 'initially had multiple alignments',
-        }
-        ret.append(f'{prefix}{self.ambiguous} reads {_explain[_m]}.')
+        ret.append(f'{prefix}{self.ambiguous} reads {self.explanation}.')
 
         # unaligned
-        if self.unaligned is not None:
+        if show_unaligned and self.unaligned is not None:
             ret.append(f'{prefix}{self.unaligned} had no alignments.')
 
         return ret
@@ -479,62 +483,76 @@ class ReassignInfo(GenericInfo):
             lg.log(loglev, f'  {_l}')
 
     def to_dataframe(self):
-        cols = {
-            'assigned': self.assigned,
-            'ambiguous': self.ambiguous,
-            'unaligned': self.unaligned,
-            'total_params': self.total_params,
-            'lnL': self.total_lnl,
-            'AIC': self.AIC(),
-            'BIC': self.BIC(),
-        }
-        return pd.DataFrame({
-            'stage': self.infotype,
-            'var': cols.keys(),
-            'value': cols.values(),
-        })
+        ret = super().to_dataframe()
+        ret['mode'] = self.reassign_mode
+        return ret
+
 
 class UMIInfo(GenericInfo):
-    num_umi: int
-    uni_umi: int
-    dup_umi: int
-    max_rpu: int
-    rpu_counter: typing.Counter | None
+    rpu_counter: typing.Counter
     rpu_bins: list[int]
     rpu_hist: npt.ArrayLike | None
-    possible_dups: int
+    # possible_dups: int
     ncomps_umi: typing.Counter
     nexclude: int
 
-    def __init__(self):
+    def __init__(
+        self,
+        bcumi_read: Optional[DefaultDict] = None
+    ):
         super().__init__()
-        self.num_umi = -1
-        self.uni_umi = -1
-        self.dup_umi = -1
-        self.max_rpu = -1
-        self.rpu_counter = None
-        self.rpu_bins = []
-        self.rpu_hist = None
-        self.possible_dups = 0
+        if bcumi_read:
+            self.init_rpu(bcumi_read)
+        else:
+            self.rpu_counter = Counter()
+            self.rpu_bins = []
+            self.rpu_hist = None
+
         self.ncomps_umi = Counter()
         self.nexclude = 0
 
-    def set_rpu(
+    @property
+    def num_umi(self):
+        return sum(self.rpu_counter.values())
+    @property
+    def uni_umi(self):
+        return self.rpu_counter[1]
+    @property
+    def dup_umi(self):
+        return sum(freq for nread,freq in self.rpu_counter.items() if nread>1)
+
+    @property
+    def max_rpu(self):
+        return max(self.rpu_counter)
+
+    @property
+    def possible_dups(self):
+        return sum((nread-1)*freq for nread, freq in self.rpu_counter.items())
+
+    @property
+    def nexclude(self):
+        return self._nexclude
+
+    @nexclude.setter
+    def nexclude(self, val: int):
+        self._nexclude = val
+
+    @property
+    def max_comps(self):
+        if not self.ncomps_umi:
+            return 0
+        return max(self.ncomps_umi)
+
+    def init_rpu(
         self, bcumi_read: DefaultDict[tuple[str,str], dict[str, None]]
     ):
+        # the number of reads with the same BC+UMI pair
         _reads_per_umi = list(map(len, bcumi_read.values()))
-        self.num_umi = len(_reads_per_umi)
         self.rpu_counter = Counter(_reads_per_umi)
-        self.uni_umi = self.rpu_counter[1]
-        self.dup_umi = self.num_umi - self.uni_umi
-        self.max_rpu = max(self.rpu_counter)
-
-        for i in range(2, self.max_rpu+1):
-            self.possible_dups += (i - 1) * self.rpu_counter[i]
 
         # Calculate bins
         if self.max_rpu <= 5:
-            self.rpu_bins = list(range(1, self.max_rpu+2))
+            self.rpu_bins = list(range(1, self.max_rpu + 2))
         else:
             self.rpu_bins = [1, 2, 3, 4, 5, 6, 11, 21]
             if self.max_rpu > 20:
@@ -545,7 +563,7 @@ class UMIInfo(GenericInfo):
         assert list(_bins) == self.rpu_bins
         return
 
-    def prelog(self, loglev=lg.INFO):
+    def loginit(self, loglev=lg.INFO):
         lg.log(loglev, f'Number of BC+UMI pairs: {self.num_umi}')
         lg.log(loglev, f'  unique UMIs: {self.uni_umi}')
         lg.log(loglev, f'  duplicated UMIs: {self.dup_umi}')
@@ -563,7 +581,8 @@ class UMIInfo(GenericInfo):
 
         lg.log(loglev, 'Finding duplicates and selecting representatives...')
         return
-    def postlog(self, loglev=lg.INFO):
+
+    def log(self, loglev=lg.INFO):
         # lg.log(loglev, f'  Identified UMI duplicate reads excluded: {self.nexclude}')
         lg.log(loglev, f'    UMIs with 1 component: {self.ncomps_umi[1]}')
         lg.log(loglev, f'    UMIs with 2 components: {self.ncomps_umi[2]}')
@@ -572,3 +591,29 @@ class UMIInfo(GenericInfo):
         if _gt3:
             lg.log(loglev, f'    UMIs with >3 components: {_gt3}')
         lg.log(loglev, f'Total UMI duplicate reads excluded: {self.nexclude}')
+
+    def to_dataframe(self, binned=True):
+        ret = super().to_dataframe()
+
+        # UMI distribution
+        if binned:
+            for b_i, v in enumerate(self.rpu_hist):
+                bs, be = self.rpu_bins[b_i], self.rpu_bins[b_i + 1]
+                if be == self.rpu_bins[-1]:
+                    _bin = f'>{bs - 1}'
+                elif be - bs == 1:
+                    _bin = f'{bs}'
+                else:
+                    _bin = f'{bs}-{be - 1}'
+                ret.loc[len(ret.index)] = ['UMIInfo', 'umidist', _bin, v]
+        else:
+            for nread in range(1, self.max_rpu+1):
+                freq = self.rpu_counter[nread]
+                ret.loc[len(ret.index)] = ['UMIInfo', 'umidist', nread, freq]
+
+        # Component distribution
+        for ncomp in range(1, self.max_comps+1):
+            freq = self.ncomps_umi[ncomp]
+            ret.loc[len(ret.index)] = ['UMIInfo', 'compdist', ncomp, freq]
+
+        return ret

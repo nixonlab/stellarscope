@@ -10,6 +10,9 @@ from .annotation import get_annotation_class
 from .annotation import BaseAnnotation
 from .utils.model import Stellarscope, TelescopeLikelihood
 
+from .utils.statistics import AnnotationInfo
+from .utils.statistics import AlignInfo, PoolInfo, ReassignInfo, UMIInfo
+
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
@@ -75,10 +78,10 @@ class LoadAnnotation(Stage):
         Annotation = get_annotation_class(opts.annotation_class,
                                           opts.stranded_mode)
         annot = Annotation(opts.gtffile, opts.attribute, opts.feature_type)
-        # lg.info(f'  Loaded {len(annot.loci)} loci')
-        # lg.info(f'  Loaded {len(annot.loci)} loci')
+        anninfo = AnnotationInfo(annot)
+        anninfo.log()
         self.endrun()
-        return annot
+        return annot, anninfo
 
 
 class LoadAlignments(Stage):
@@ -86,14 +89,14 @@ class LoadAlignments(Stage):
         self.stagenum = stagenum
         self.stagename = 'Load alignment'
 
-    def run(self, opts, st_obj: Stellarscope, annot: BaseAnnotation):
+    def run(self, opts, st_obj: Stellarscope, annot: BaseAnnotation) -> AlignInfo:
         self.startrun()
         alninfo = st_obj.load_alignment(annot)
         lg.info('Loading alignments complete.')
         alninfo.log()
         self.endrun()
         st_obj.save(opts.outfile_path('checkpoint.load_alignment.pickle'))
-        return
+        return alninfo
 
 
 class LoadCheckpoint(Stage):
@@ -141,12 +144,13 @@ class UMIDeduplication(Stage):
         self.stagenum = stagenum
         self.stagename = 'UMI deduplication'
 
-    def run(self, opts, st_obj: Stellarscope):
+    def run(self, opts, st_obj: Stellarscope) -> UMIInfo:
         self.startrun()
-        st_obj.dedup_umi()
+        umiinfo = st_obj.dedup_umi()
+        umiinfo.log()
         self.endrun()
         st_obj.save(opts.outfile_path('checkpoint.dedup_umi.pickle'))
-        return
+        return umiinfo
 
 
 class FitModel(Stage):
@@ -154,13 +158,12 @@ class FitModel(Stage):
         self.stagenum = stagenum
         self.stagename = 'Fitting model'
 
-    def run(self, opts, st_obj: Stellarscope):
+    def run(self, opts, st_obj: Stellarscope) -> tuple[TelescopeLikelihood, PoolInfo]:
         self.startrun()
         st_model, poolinfo = st_obj.fit_pooling_model()
         poolinfo.log()
-        # t = poolinfo.to_dataframe()
         self.endrun()
-        return st_model
+        return st_model, poolinfo
 
 
 class ReassignReads(Stage):
@@ -170,9 +173,11 @@ class ReassignReads(Stage):
 
     def run(self, st_obj: Stellarscope, st_model: TelescopeLikelihood):
         self.startrun()
-        st_obj.reassign(st_model)
+        rmode_info = st_obj.reassign(st_model)
+        for rmode, rinfo in rmode_info.items():
+            rinfo.log()
         self.endrun()
-        return
+        return rmode_info
 
 
 class GenerateReport(Stage):

@@ -13,6 +13,7 @@ import shutil
 
 import numpy as np
 from numpy.random import default_rng
+import pandas as pd
 
 from . import utils
 from stellarscope import StellarscopeError
@@ -118,25 +119,29 @@ def run(args):
     opts = StellarscopeAssignOptions(args)
     utils.configure_logging(opts)
     curstage = 0
+    infolist = []
 
     ''' Initialize Stellarscope '''
     st_obj = InitStellarscope(curstage).run(opts)
     curstage += 1
 
     ''' Load annotation'''
-    annot = LoadAnnotation(curstage).run(opts)
+    annot, anninfo = LoadAnnotation(curstage).run(opts)
     curstage += 1
+    infolist.append(anninfo)
 
     ''' Load alignments '''
-    LoadAlignments(curstage).run(opts, st_obj, annot)
+    alninfo = LoadAlignments(curstage).run(opts, st_obj, annot)
     curstage += 1
+    infolist.append(alninfo)
 
     ''' UMI deduplication '''
     if opts.ignore_umi:
         lg.info('Skipping UMI deduplication (option --ignore_umi)')
     else:
-        UMIDeduplication(curstage).run(opts, st_obj)
+        umiinfo = UMIDeduplication(curstage).run(opts, st_obj)
         curstage += 1
+        infolist.append(umiinfo)
 
     ''' Fit model '''
     if opts.skip_em:
@@ -145,12 +150,14 @@ def run(args):
         lg.info(f'stellarscope assign complete in {fmt_delta(_elapsed)}')
         return
     else:
-        st_model = FitModel(curstage).run(opts, st_obj)
+        st_model, poolinfo = FitModel(curstage).run(opts, st_obj)
         curstage += 1
+        infolist.append(poolinfo)
 
     ''' Reassign reads '''
-    ReassignReads(curstage).run(st_obj, st_model)
+    reassigninfo = ReassignReads(curstage).run(st_obj, st_model)
     curstage += 1
+    infolist += list(reassigninfo.values())
 
     ''' Generate report '''
     GenerateReport(curstage).run(st_obj, st_model)
@@ -160,6 +167,11 @@ def run(args):
     if opts.updated_sam:
         UpdateSam(curstage).run(opts, st_obj, st_model)
         curstage += 1
+
+    ''' Concat statistics '''
+    pd.concat([_info.to_dataframe() for _info in infolist]).to_csv(
+        opts.outfile_path('stats.final.tsv'), sep='\t', index=False,
+    )
 
     ''' Final '''
     st_obj.save(opts.outfile_path('checkpoint.final.pickle'))

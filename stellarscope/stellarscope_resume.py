@@ -88,6 +88,7 @@ def run(args):
     opts = StellarscopeResumeOptions(args)
     utils.configure_logging(opts)
     curstage = 0
+    infolist = []
 
     ''' Load Stellarscope object '''
     st_obj = LoadCheckpoint(curstage).run(opts)
@@ -99,8 +100,9 @@ def run(args):
         if opts.ignore_umi:
             lg.info('Skipping UMI deduplication (option --ignore_umi)')
         else:
-            UMIDeduplication(curstage).run(opts, st_obj)
+            umiinfo = UMIDeduplication(curstage).run(opts, st_obj)
             curstage += 1
+            infolist.append(umiinfo)
     else:
         if opts.ignore_umi:
             lg.warning('Checkpoint contains UMI corrected scores.')
@@ -116,16 +118,23 @@ def run(args):
         lg.info(f'stellarscope resume complete in {fmt_delta(_elapsed)}')
         return
     else:
-        st_model = FitModel(curstage).run(opts, st_obj)
+        st_model, poolinfo = FitModel(curstage).run(opts, st_obj)
         curstage += 1
+        infolist.append(poolinfo)
 
     ''' Reassign reads '''
-    ReassignReads(curstage).run(st_obj, st_model)
+    reassigninfo = ReassignReads(curstage).run(st_obj, st_model)
     curstage += 1
+    infolist += list(reassigninfo.values())
 
     ''' Generate report '''
     GenerateReport(curstage).run(st_obj, st_model)
     curstage += 1
+
+    ''' Concat statistics '''
+    pd.concat([_info.to_dataframe() for _info in infolist]).to_csv(
+        opts.outfile_path('stats.final.tsv'), sep='\t', index=False,
+    )
 
     ''' Final '''
     st_obj.save(opts.outfile_path('checkpoint.final.pickle'))

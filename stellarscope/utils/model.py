@@ -438,6 +438,10 @@ class Telescope(object):
 
 
     def output_report(self, tl, stats_filename, counts_filename):
+        raise PendingDeprecationWarning('''
+            Stellarscope performs reassignment and stores reassigned matrices
+            as instance variable (Stellarscope.reassignments)
+        ''')
         _rmethod, _rprob = self.opts.reassign_mode[0], self.opts.conf_prob
         _fnames = sorted(self.feat_index, key=self.feat_index.get)
         _flens = self.feature_length
@@ -541,6 +545,10 @@ class Telescope(object):
             outsam.close()
 
     def print_summary(self, loglev=lg.WARNING):
+        raise DeprecationWarning('''
+            deprecated:: 9097515
+            Replaced by statistics.AlignInfo.log()
+        ''')
         _d = Counter()
         for k, v in self.run_info.items():
             try:
@@ -946,82 +954,52 @@ class TelescopeLikelihood(object):
         reassign_mat = None
         rinfo = ReassignInfo(mode)
 
-        if mode == 'best_exclude':
-            ''' Identify best PP(s), then exclude rows with >1 best '''
+        if mode in ['best_exclude', 'best_random', 'best_average']:
+            ''' Identify best PP(s), then count number equal to best '''
             bestmat = self.z.binmax(1)
             nbest = bestmat.sum(1)
+
+            # update ResassignInfo
             rinfo.assigned = sum(nbest.A1 == 1)
             rinfo.ambiguous = sum(nbest.A1 > 1)
-            reassign_mat = bestmat.multiply(nbest == 1)
+            rinfo.unaligned = sum(nbest.A1 == 0)
+            rinfo.ambigous_dist = Counter(nbest.A1)
+
+            # Apply exclude, random, or average
+            if mode == 'best_exclude':
+                reassign_mat = bestmat.multiply(nbest == 1)
+            elif mode == 'best_random':
+                reassign_mat = bestmat.choose_random(1, self.opts.rng)
+            elif mode == 'best_average':
+                reassign_mat = bestmat.norm(1)
         elif mode == 'best_conf':
             ''' Zero out all values less than threshold. Since each row must 
                 sum to 1, if threshold > 0.5 then each row will have at most 1
                 nonzero element.
             '''
             if thresh <= 0.5:
-                msg = f"Confidence threshold ({thresh}) must be > 0.5"
-                raise StellarscopeError(msg)
+                raise StellarscopeError(
+                    f"Confidence threshold ({thresh}) must be > 0.5"
+                )
 
             confmat = csr_matrix(self.z > thresh, dtype=np.int8)
-
             rowmax = self.z.max(1)
+
+            # update ReassignInfo
             rinfo.assigned = sum(rowmax.data > thresh)
             rinfo.ambiguous = sum(rowmax.data <= thresh)
-            # rinfo.unaligned = rowmax.shape[0] - rowmax.nnz
+            rinfo.unaligned = rowmax.shape[0] - rowmax.nnz
 
-
-            # assert np.all(confmat.sum(1) <= 1)
-            # assert confmat.nnz == rinfo.assigned
-            # assert np.all(v_old.sum(1) <= 1)
-            # lg.info(f'  best_conf: reads with zero confidence {zero_conf}')
-            # lg.info(f'  best_conf: reads with low confidence alignments {low_conf}')
-            # lg.info(f'  best_conf: reads with high confidence alignments {high_conf}')
             reassign_mat = confmat
-        elif mode == 'best_random':
-            ''' Identify best PP(s), then randomly choose one per row '''
-            bestmat = self.z.binmax(1)
-            nbest = bestmat.sum(1)
-
-            rinfo.assigned = sum(nbest.A1 == 1)
-            rinfo.ambiguous = sum(nbest.A1 > 1)
-            # rinfo.unaligned = sum(nbest.A1 == 0)
-
-            rinfo.ambigous_dist = Counter(nbest.A1)
-            # lg.info(f'  best_random: reads with no best alignments {sum(nbest.A1 == 0)}')
-            # lg.info(f'  best_random: reads with 1 best alignment {sum(nbest.A1 == 1)}')
-            # lg.info(f'  best_random: reads with >1 best alignments, randomly choosing among best {sum(nbest.A1 > 1)}')
-            # for nb in range(2,max(nbest_dist.keys())):
-            #     lg.info(
-            #         f'    best_random: reads with {nb} best alignments {nbest_dist[nb]}')
-            reassign_mat = bestmat.choose_random(1, self.opts.rng)
-        elif mode == 'best_average':
-            ''' Identify best PP(s), then divide by row sum '''
-            bestmat = self.z.binmax(1)
-            nbest = bestmat.sum(1)
-
-            rinfo.assigned = sum(nbest.A1 == 1)
-            rinfo.ambiguous = sum(nbest.A1 > 1)
-            # rinfo.unaligned = sum(nbest.A1 == 0)
-
-            rinfo.ambigous_dist = Counter(nbest.A1)
-            # lg.info(f'  best_average: reads with no best alignments {sum(nbest.A1 == 0)}')
-            # lg.info(f'  best_average: reads with 1 best alignment {sum(nbest.A1 == 1)}')
-            # lg.info(f'  best_average: reads with >1 best alignments, randomly choosing among best {sum(nbest.A1 > 1)}')
-            # for nb in range(2,max(nbest_dist.keys())):
-            #     lg.info(
-            #         f'    best_average: reads with {nb} best alignments {nbest_dist[nb]}')
-            reassign_mat = bestmat.norm(1)
         elif mode == 'initial_unique':
             ''' Remove ambiguous rows and set nonzero values to 1 '''
             unimap = (self.Q.multiply(self.Y_uni) > 0).astype(np.int8)
 
+            # update ReassignInfo
             rinfo.assigned = unimap.nnz
             rinfo.ambiguous = self.Y_amb.nnz
-            # rinfo.unaligned = self.Y_0.nnz
-            # assignments_old = self.Q.norm(1).multiply(self.Y_uni).ceil().astype(np.uint8)
-            # assert assignments.check_equal(assignments_old)
-            # lg.info(
-            #     f'  initial_unique: uniquely mapped reads {assignments.nnz}')
+            rinfo.unaligned = self.Y_0.nnz
+
             reassign_mat = unimap
         elif mode == 'initial_random':
             ''' Identify best scores in initial matrix then randomly choose one
@@ -1030,26 +1008,28 @@ class TelescopeLikelihood(object):
             bestraw = self.raw_scores.binmax(1)
             nbest_raw = bestraw.sum(1)
 
+            # update ReassignInfo
             rinfo.assigned = sum(nbest_raw.A1 == 1)
             rinfo.ambiguous = sum(nbest_raw.A1 > 1)
-            # rinfo.unaligned = sum(nbest_raw.A1 == 0)
-
+            rinfo.unaligned = sum(nbest_raw.A1 == 0)
             rinfo.ambigous_dist = Counter(nbest_raw.A1)
+
             reassign_mat = bestraw.choose_random(1, self.opts.rng)
         elif mode == 'total_hits':
             ''' Return all nonzero elements in initial matrix '''
-            # matrix where mapped equals 1, otherwise 0
             mapped = csr_matrix(self.raw_scores > 0, dtype=np.int8)
             mapped_rowsum = mapped.sum(1)
 
+            # update ReassignInfo
             rinfo.assigned = mapped.sum()
             rinfo.ambiguous = sum(mapped_rowsum.A1 > 1)
-            # rinfo.unaligned = sum(mapped_rowsum.A1 == 0)
+            rinfo.unaligned = sum(mapped_rowsum.A1 == 0)
 
             reassign_mat = mapped
 
         if reassign_mat is None:
             raise StellarscopeError('reassign_mat was not set.')
+
         return reassign_mat, rinfo
 
 class Assigner:
@@ -1289,7 +1269,7 @@ def _fit_pooling_model(
             yield TelescopeLikelihood(_fullmat.multiply(_I), opts)
 
     """ Fit pooling model """
-    poolinfo = PoolInfo()
+    poolinfo = PoolInfo(opts.pooling_mode)
 
     """ Select UMI corrected or raw score matrix """
     if opts.ignore_umi:
@@ -1529,7 +1509,9 @@ class Stellarscope(Telescope):
 
         """
 
-        def skip_fragment():
+        def skip_fragment(reason: Optional[str] = None):
+            if reason:
+                _finfo.error = reason
             alninfo.update(_finfo)
             if self.opts.updated_sam:
                 [p.write(bam_u) for p in alns]
@@ -1568,16 +1550,18 @@ class Stellarscope(Telescope):
 
             _prev = self.read_bcode_map.setdefault(query_name, barcode)
             if _prev != barcode:
-                msg = f'Barcode error ({query_name}): {_prev} != {barcode}'
-                raise AlignmentValidationError(msg)
+                raise AlignmentValidationError(
+                    f'Barcode error ({query_name}): {_prev} != {barcode}'
+                )
 
             self.bcode_ridx_map[barcode].add(row)
 
             if not self.opts.ignore_umi:
                 _prev = self.read_umi_map.setdefault(query_name, umi)
                 if _prev != umi:
-                    msg = f'UMI error ({query_name}): {_prev} != {umi}'
-                    raise AlignmentValidationError(msg)
+                    raise AlignmentValidationError(
+                        f'UMI error ({query_name}): {_prev} != {umi}'
+                    )
                 self.bcode_umi_map[barcode].append(umi)
             return
 
@@ -1587,18 +1571,7 @@ class Stellarscope(Telescope):
         assign_func = Assigner(annotation, self.opts).assign_func()
 
         # Initialize variables for function
-        # alninfo = OrderedDict()
         alninfo = AlignInfo(self.opts.progress)
-
-        # alninfo['total_fragments'] = 0  # total number of fragments
-        # for code, desc in ALNCODES:
-        #     alninfo[code] = 0       # alignment code
-        # alninfo['nofeat_U'] = 0     # uniquely aligns outside annotation
-        # alninfo['nofeat_A'] = 0     # ambiguously aligns outside annotation
-        # alninfo['feat_U'] = 0       # uniquely aligns overlapping annotation
-        # alninfo['feat_A'] = 0       # ambiguously aligns overlapping annotation
-        # alninfo['minAS'] = BIG_INT  # minimum alignment score
-        # alninfo['maxAS'] = -BIG_INT # maximum alignment score
 
         _pysam_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(self.opts.samfile, check_sq=False) as sf:
@@ -1611,18 +1584,10 @@ class Stellarscope(Telescope):
 
             # Iterate over fragments
             for ci, alns in alignment.fetch_fragments_seq(sf, until_eof=True):
-                # alninfo['total_fragments'] += 1
                 _finfo = FragmentInfo()
 
-                # # Write progress to console or log
-                # if self.opts.progress and \
-                #         alninfo['total_fragments'] % self.opts.progress == 0:
-                #     log_progress(alninfo['total_fragments'])
-
                 ''' Count code '''
-                _code = ALNCODES[ci][0]
-                # alninfo[_code] += 1
-                _finfo.add_code(_code)
+                _finfo.add_code(ALNCODES[ci][0])
 
                 ''' Check whether fragment is mapped '''
                 if not _finfo.mapped:
@@ -1636,40 +1601,31 @@ class Stellarscope(Telescope):
 
                 ''' Validate barcode and UMI '''
                 if _cur_bcode is None:
-                    _finfo.error = "Missing CB"
-                    skip_fragment()
+                    skip_fragment("Missing CB")
                     continue
 
                 if self.whitelist:
                     if _cur_bcode not in self.whitelist:
-                        _finfo.error = "CB not in whitelist"
-                        skip_fragment()
+                        skip_fragment("CB not in whitelist")
                         continue
 
                 if not self.opts.ignore_umi and _cur_umi is None:
-                    _finfo.error = "Missing UB"
-                    skip_fragment()
+                    skip_fragment("Missing UB")
                     continue
 
                 ''' Fragment is ambiguous if multiple mappings'''
                 _mapped = [a for a in alns if not a.is_unmapped]
-                # _ambig = len(_mapped) > 1
                 _finfo.ambig = len(_mapped) > 1
 
                 ''' Update min and max scores '''
-                _scores = [a.alnscore for a in _mapped]
-                # alninfo['minAS'] = min(alninfo['minAS'], *_scores)
-                # alninfo['maxAS'] = max(alninfo['maxAS'], *_scores)
-                _finfo.scores = _scores
+                _finfo.scores = [a.alnscore for a in _mapped]
 
                 ''' Check whether fragment overlaps annotation '''
                 overlap_feats = list(map(assign_func, _mapped))
-                # has_overlap = any(f != _nfkey for f in overlap_feats)
                 _finfo.overlap = any(f != _nfkey for f in overlap_feats)
 
                 ''' Fragment has no overlap, skip '''
                 if not _finfo.overlap:
-                    # alninfo['nofeat_{}'.format('A' if _ambig else 'U')] += 1
                     skip_fragment()
                     continue
 
@@ -1677,7 +1633,6 @@ class Stellarscope(Telescope):
                 store_read_info(_cur_qname, _cur_bcode, _cur_umi)
 
                 ''' Fragment overlaps with annotation '''
-                # alninfo['feat_{}'.format('A' if _ambig else 'U')] += 1
                 alninfo.update(_finfo)
 
                 ''' Find the best alignment for each locus '''
@@ -1701,7 +1656,6 @@ class Stellarscope(Telescope):
         -------
 
         """
-        umiinfo = UMIInfo()
         exclude_qnames: dict[str, int] = {}  # reads to be excluded
 
         if output_report:
@@ -1715,8 +1669,9 @@ class Stellarscope(Telescope):
 
         """ Update umiinfo """
         sumlvl = lg.INFO if summary else lg.DEBUG
-        umiinfo.set_rpu(bcumi_read)
-        umiinfo.prelog(sumlvl)
+        umiinfo = UMIInfo(bcumi_read)
+        # umiinfo.init_rpu(bcumi_read)
+        umiinfo.loginit(sumlvl)
 
         ''' Loop over all bc+umi pairs'''
         for (bc, umi), qnames in bcumi_read.items():
@@ -1744,7 +1699,7 @@ class Stellarscope(Telescope):
                     _ = exclude_qnames.setdefault(qname, len(exclude_qnames))
 
             umiinfo.ncomps_umi[len(set(comps))] += 1
-            umiinfo.nexclude += sum(is_excluded)
+            umiinfo.nexclude = umiinfo.nexclude + sum(is_excluded)
 
             if output_report:
                 print(f'{bc}\t{umi}', file=umiFH)
@@ -1764,8 +1719,8 @@ class Stellarscope(Telescope):
         # self.corrected = (self.raw_scores - self.raw_scores.multiply(self.umi_duplicates))
         self.corrected = self.raw_scores.multiply(bool_inv(self.umi_dups))
 
-        umiinfo.postlog(sumlvl)
-        return
+        #umiinfo.postlog(sumlvl)
+        return umiinfo
 
     """
         # Sanity check: check excluded rows are set to zero in self.corrected
@@ -1785,7 +1740,7 @@ class Stellarscope(Telescope):
             progress=100
         )
 
-    def reassign(self, tl: TelescopeLikelihood):
+    def reassign(self, tl: TelescopeLikelihood) -> dict[str, ReassignInfo]:
         """
 
         Returns
@@ -1795,12 +1750,14 @@ class Stellarscope(Telescope):
         if not hasattr(self, "reassignments"):
             self.reassignments = {}
 
+        rmode_info = {}
+
         for _rmode in self.opts.reassign_mode:
             _thresh = self.opts.conf_prob if _rmode == 'best_conf' else None
             _rmat,_rinfo = tl.reassign(_rmode, _thresh)
             self.reassignments[_rmode] = _rmat
-            _rinfo.log()
-        return
+            rmode_info[_rmode] = _rinfo
+        return rmode_info
 
 
     def save(self, filename: Union[str, bytes, os.PathLike]):
@@ -2136,8 +2093,9 @@ class Stellarscope(Telescope):
             outsam.close()
 
     def print_summary(self, loglev=lg.WARNING):
-        raise PendingDeprecationWarning('''
-            This is expected to be replaced by statistics.AlignInfo.log()
+        raise DeprecationWarning('''
+            deprecated:: 9097515
+            Replaced by statistics.AlignInfo.log()
         ''')
         _info = self.run_info
 
