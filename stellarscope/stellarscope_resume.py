@@ -8,6 +8,7 @@ import pkgutil
 
 import numpy as np
 from numpy.random import default_rng
+import pandas as pd
 
 from . import utils
 from stellarscope import StellarscopeError
@@ -93,6 +94,7 @@ def run(args):
     ''' Load Stellarscope object '''
     st_obj = LoadCheckpoint(curstage).run(opts)
     curstage += 1
+    infolist.append(opts)
 
     ''' UMI deduplication '''
     if st_obj.corrected is None:

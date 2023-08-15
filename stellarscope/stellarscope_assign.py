@@ -124,6 +124,7 @@ def run(args):
     ''' Initialize Stellarscope '''
     st_obj = InitStellarscope(curstage).run(opts)
     curstage += 1
+    infolist.append(opts)
 
     ''' Load annotation'''
     annot, anninfo = LoadAnnotation(curstage).run(opts)

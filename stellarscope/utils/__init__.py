@@ -3,6 +3,8 @@ from __future__ import absolute_import
 
 import sys
 import os
+
+import pandas as pd
 import yaml
 import logging
 import hashlib, _hashlib
@@ -27,6 +29,7 @@ class OptionsBase(object):
     initialization and contains data that can be passed to
     `ArgumentParser.add_argument()`.
     """
+    optiontype: str
 
     OPTS_YML = """
     - Input Options:
@@ -55,6 +58,7 @@ class OptionsBase(object):
                     raise ValueError(msg)
             return _vallist
 
+        self.optiontype = self.__class__.__name__
         self.opt_dicts, self.opt_groups = self._parse_yaml_opts(self.OPTS_YML)
 
         for optname, optval in vars(args).items():
@@ -144,6 +148,15 @@ class OptionsBase(object):
         basename = '%s-%s' % (self.exp_tag, suffix)
         return os.path.join(self.outdir, basename)
 
+    def _fmt_val(self, arg_name):
+        v = getattr(self, arg_name, "Not set")
+        # formatting for files
+        v = getattr(v, 'name') if hasattr(v, 'name') else v
+        # formatting for list
+        if isinstance(v, list):
+            v = ', '.join(map(str, v))
+        return v
+
     def __str__(self):
         ret = []
         if hasattr(self, 'version'):
@@ -151,14 +164,19 @@ class OptionsBase(object):
         for group_name, args in self.opt_groups.items():
             ret.append('{}'.format(group_name))
             for arg_name in args.keys():
-                v = getattr(self, arg_name, "Not set")
-                # formatting for files
-                v = getattr(v, 'name') if hasattr(v, 'name') else v
-                # formatting for list
-                # pass
-                ret.append('    {:30}{}'.format(arg_name + ':', v))
+                v = self._fmt_val(arg_name)
+                ret.append(f'    {(arg_name+":"):30}{v}')
         return '\n'.join(ret)
 
+    def to_dataframe(self):
+        dat = []
+        if hasattr(self, 'version'):
+            dat.append((self.optiontype, '', 'version', self.version))
+        for group_name, args in self.opt_groups.items():
+            for arg_name in args.keys():
+                v = self._fmt_val(arg_name)
+                dat.append((self.optiontype, group_name, arg_name, v))
+        return pd.DataFrame(dat, columns=['stage', 'mode', 'var', 'value'])
 
 def configure_logging(opts):
     """ Configure logging options
