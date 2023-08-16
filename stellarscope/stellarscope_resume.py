@@ -15,6 +15,7 @@ from stellarscope import StellarscopeError
 from .stellarscope_assign import StellarscopeAssignOptions
 from .stages import LoadCheckpoint, UMIDeduplication, FitModel, \
     ReassignReads, GenerateReport
+from .utils.statistics import output_stats
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
@@ -114,15 +115,17 @@ def run(args):
             lg.debug('Using UMI corrected scores from checkpoint')
 
     ''' Fit model '''
-    if opts.skip_em:
-        lg.info("Skipping EM...")
-        _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
-        lg.info(f'stellarscope resume complete in {fmt_delta(_elapsed)}')
-        return
-    else:
+    if not opts.skip_em:
         st_model, poolinfo = FitModel(curstage).run(opts, st_obj)
         curstage += 1
         infolist.append(poolinfo)
+    else:
+        ''' Exiting without EM '''
+        lg.info("Skipping EM...")
+        output_stats(infolist, opts.outfile_path('stats.final.tsv'))
+        _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
+        lg.info(f'stellarscope resume complete in {fmt_delta(_elapsed)}')
+        return
 
     ''' Reassign reads '''
     reassigninfo = ReassignReads(curstage).run(st_obj, st_model)
@@ -138,7 +141,8 @@ def run(args):
         opts.outfile_path('stats.final.tsv'), sep='\t', index=False,
     )
 
-    ''' Final '''
+    ''' Exit '''
+    output_stats(infolist, opts.outfile_path('stats.final.tsv'))
     st_obj.save(opts.outfile_path('checkpoint.final.pickle'))
     _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
     lg.info(f'stellarscope resume complete in {fmt_delta(_elapsed)}')

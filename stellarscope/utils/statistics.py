@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 
+import os
 import logging as lg
 from collections import Counter
 
 import typing
-from typing import Optional, DefaultDict
+from typing import Optional, DefaultDict, Union
 import numpy.typing as npt
 
-
 import numpy as np
-import inspect
 import pandas as pd
-from numbers import Number
-from . import human_format
+from . import human_format, OptionsBase
+from ..annotation import BaseAnnotation
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
@@ -44,15 +43,39 @@ class GenericInfo(object):
             dtype=object
         )
 
-from ..annotation import BaseAnnotation
+
 class AnnotationInfo(GenericInfo):
     _num_loci: int
+    _stranded: bool
+    _depth: int
     def __init__(self, annot: BaseAnnotation):
         super().__init__()
         self._num_loci = len(annot.loci)
+        self._stranded = annot.stranded
+        self._num_intervals = annot.num_intervals
+        self._max_depth = annot.max_depth
+        self._total_length = annot.total_length
+
     @property
     def num_loci(self):
         return self._num_loci
+
+    @property
+    def stranded(self):
+        return self._stranded
+
+    @property
+    def num_intervals(self):
+        return self._num_intervals
+
+    @property
+    def max_depth(self):
+        return self._max_depth
+
+    @property
+    def total_length(self):
+        return self._total_length
+
     def log(self, loglev=lg.INFO):
         lg.log(loglev, f'  Loaded {self.num_loci} loci')
         return
@@ -383,22 +406,6 @@ class PoolInfo(GenericInfo):
         ret['mode'] = self.pooling_mode
         return ret
 
-    # def to_dataframe(self):
-    #     cols = {
-    #         'nmodels': self.nmodels,
-    #         'fitted_models': self.fitted_models,
-    #         'total_obs': self.total_obs,
-    #         'total_params': self.total_params,
-    #         'lnL': self.total_lnl,
-    #         'AIC': self.AIC(),
-    #         'BIC': self.BIC(),
-    #     }
-    #     return pd.DataFrame({
-    #         'stage': self.infotype,
-    #         'var': cols.keys(),
-    #         'value': cols.values(),
-    #     })
-
 
 class ReassignInfo(GenericInfo):
     """
@@ -492,7 +499,6 @@ class UMIInfo(GenericInfo):
     rpu_counter: typing.Counter
     rpu_bins: list[int]
     rpu_hist: npt.ArrayLike | None
-    # possible_dups: int
     ncomps_umi: typing.Counter
     nexclude: int
 
@@ -617,3 +623,22 @@ class UMIInfo(GenericInfo):
             ret.loc[len(ret.index)] = ['UMIInfo', 'compdist', ncomp, freq]
 
         return ret
+
+
+def output_stats(
+        infolist: list[GenericInfo|OptionsBase],
+        outfile: Union[str, bytes, os.PathLike, None] = None
+):
+    """ Concatenate DataFrames and output to table
+
+    Parameters
+    ----------
+    infolist
+    outfile
+
+    Returns
+    -------
+
+    """
+    concat = pd.concat([_info.to_dataframe() for _info in infolist])
+    return concat.to_csv(outfile, sep='\t', index=False)

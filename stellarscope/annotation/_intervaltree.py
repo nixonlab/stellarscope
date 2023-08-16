@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import typing
+from typing import Optional
 
 from collections import defaultdict, Counter
 import logging as lg
@@ -98,20 +99,38 @@ class IntervalTreeAnnotation(BaseAnnotation):
         return _subannot
 
 
+    @property
     def num_refs(self):
         return len(self.itree)
 
+    @property
     def num_intervals(self):
-        return sum(len(subtree) for k, subtree in self.itree.items())
+        return sum(len(st) for st in self.itree.values())
 
-
+    @property
     def num_loci(self):
         return len(self.loci)
-
 
     @property
     def stranded(self):
         return False
+
+    @property
+    def max_depth(self):
+        return max([st.top_node.depth for st in self.itree.values()])
+
+    @property
+    def total_length(self):
+        """ Calculate total annotation length
+
+            Subtrees must be copied since merge_overlaps() is in-place
+        """
+        ret = 0
+        for subtree in self.itree.values():
+            _cpy = subtree.copy()
+            _cpy.merge_overlaps()
+            ret += sum([iv.length() for iv in _cpy.all_intervals])
+        return ret
 
     def save(self, filename):
         with open(filename, 'wb') as outh:
