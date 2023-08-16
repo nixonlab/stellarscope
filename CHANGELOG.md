@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0.rc1](https://github.com/nixonlab/stellarscope/releases/tag/1.4)
+## [1.4.0.rc0](https://github.com/nixonlab/stellarscope/releases/tag/1.4.0.rc0)
 
 ### Added
 - **Implemented stages.** Workflows for `stellarscope assign` and 
@@ -39,6 +39,11 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 - `--devmode` option.
+- `Telescope` class
+- `Stellarscope.output_report_old()` Early version of `output_report` that 
+  does not use multimapper UMI correction
+- `Stellarscope.print_summary()`
+
 
 ## [1.3.3.dev3](https://github.com/nixonlab/stellarscope/releases/tag/1.3.3.dev3) - 2023-06-16
 

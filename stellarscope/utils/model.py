@@ -1488,29 +1488,6 @@ class Stellarscope(object):
             deprecated:: 9097515
             Replaced by statistics.AlignInfo.log()
         ''')
-        _info = self.run_info
-
-        ''' Alignment summary '''
-        nmapped = _info['PM'] + _info['SM'] + _info['PX']
-        nunique = _info['nofeat_U'] + _info['feat_U']
-        nambig = _info['nofeat_A'] + _info['feat_A']
-        nfeat = _info["feat_U"] + _info["feat_A"]
-        lg.log(loglev, "Alignment Summary:")
-        lg.log(loglev, f'    {_info["total_fragments"]} total fragments.')
-        lg.log(loglev, f'        {_info["PM"]} mapped as pairs.')
-        lg.log(loglev, f'        {_info["PX"]} mapped as mixed.')
-        lg.log(loglev, f'        {_info["SM"]} mapped single.')
-        lg.log(loglev, f'        {_info["PU"] + _info["SU"]} failed to map.')
-        lg.log(loglev, '--')
-        lg.log(loglev, f'    {nmapped} mapped; of these')
-        lg.log(loglev, f'        {nunique} had one unique alignment.')
-        lg.log(loglev, f'        {nambig} had multiple alignments.')
-        lg.log(loglev, '--')
-        lg.log(loglev, f'    {nfeat} overlapped TE features; of these')
-        lg.log(loglev, f'        {_info["feat_U"]} map to one locus.')
-        lg.log(loglev, f'        {_info["feat_A"]} map to multiple loci.')
-        lg.log(loglev, '')
-        return
 
     def check_equal(self, other: Stellarscope, explain: bool = False):
         """ Check whether two Stellarscope objects are equal
