@@ -41,6 +41,22 @@ code are reflected immediately without reinstalling.
 pip install -e . 
 ```
 
+### Memory profiling
+
+Memory profiling and plotting require `memory_profiler` and `matplotlib`
+
+```bash
+mamba install memory_profiler
+mamba install matplotlib
+```
+
+Memory profiling can be run like this:
+
+```bash
+mprof run stellarscope assign ...<stellarscope args>...
+mprof plot
+```
+
 ## Extending
 
 Each subcommand is defined in a top-level module named as 

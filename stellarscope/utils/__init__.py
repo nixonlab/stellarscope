@@ -3,11 +3,14 @@ from __future__ import absolute_import
 
 import sys
 import os
+
+import pandas as pd
 import yaml
 import logging
 import hashlib, _hashlib
 from typing import Union, Optional
 from collections import OrderedDict
+
 
 # Does not appear to be used but needed for eval statements:
 import argparse
@@ -22,11 +25,13 @@ class OptionsBase(object):
 
     Each class instance has attributes that correspond to command line options.
     Recommended usage is to subclass this for each subcommand by changing the
-    OPTS class variable. OPTS is a YAML string that is parsed on initialization
-    and contains data that can be passed to `ArgumentParser.add_argument()`.
+    OPTS_YML class variable. OPTS_YML is a YAML string that is parsed on
+    initialization and contains data that can be passed to
+    `ArgumentParser.add_argument()`.
     """
+    optiontype: str
 
-    OPTS = """
+    OPTS_YML = """
     - Input Options:
         - infile:
             positional: True
@@ -37,36 +42,70 @@ class OptionsBase(object):
             help: Output file.
     """
 
-    def __init__(self, args):
-        self.opt_names, self.opt_groups = self._parse_yaml_opts(self.OPTS)
-        for k, v in vars(args).items():
-            if k in self.opt_names:
-                setattr(self, k, v)
-            else:
-                setattr(self, k, v)
+    def __init__(self, args: argparse.Namespace):
+        """
 
-        # default for logfile
-        if hasattr(self, 'logfile') and self.logfile is None:
-            self.logfile = sys.stderr
+        Parameters
+        ----------
+        args
+        """
+        def validate_csv(_optname, _val, _opt_d):
+            _vallist = _val.split(',')
+            if 'choices' in _opt_d:
+                if not all(v in _opt_d['choices'] for v in _vallist):
+                    msg = f'Invalid argument for "{_optname}": "{_val}". '
+                    msg += 'Valid choices: %s.' % ', '.join(_opt_d['choices'])
+                    raise ValueError(msg)
+            return _vallist
+
+        self.optiontype = self.__class__.__name__
+        self.opt_dicts, self.opt_groups = self._parse_yaml_opts(self.OPTS_YML)
+
+        for optname, optval in vars(args).items():
+            if optname in self.opt_dicts:
+                _d = self.opt_dicts[optname]
+                if _d.get('type') == 'csv':
+                    vallist = validate_csv(optname, optval, _d)
+                    setattr(self, optname, vallist)
+                else:
+                    setattr(self, optname, optval)
+            else:
+                setattr(self, optname, optval)
+
+        return
 
     @classmethod
-    def add_arguments(cls, parser):
-        opt_names, opt_groups = cls._parse_yaml_opts(cls.OPTS)
+    def add_arguments(cls, parser: argparse.ArgumentParser):
+        """
+
+        Parameters
+        ----------
+        parser
+
+        Returns
+        -------
+
+        """
+        _, opt_groups = cls._parse_yaml_opts(cls.OPTS_YML)
         for group_name, args in opt_groups.items():
             argparse_grp = parser.add_argument_group(group_name, '')
             for arg_name, arg_d in args.items():
                 _d = dict(arg_d)
-                if _d.pop('hide', False):
+
+                ''' Special cases '''
+                if _d.pop('hide', False):   # do not add options with "hide"
                     continue
 
+                if _d.get('type') == 'csv': # set for type "csv"
+                    _d.pop('choices', None)
+                    # _d.pop('default', None)
+                    _d['type'] = 'str'
+
+                ''' Evaluate type (all opts) '''
                 if 'type' in _d:
-                    if _d['type'] == 'csv':
-                        _d['type'] = 'str'
-                        #_d.pop('default', None)
-                        _d.pop('choices', None)
                     _d['type'] = eval(_d['type'])
 
-
+                ''' Format argument name '''
                 if _d.pop('positional', False):
                     _arg_name = arg_name
                 else:
@@ -82,21 +121,41 @@ class OptionsBase(object):
                     argparse_grp.add_argument(_arg_name, **_d)
 
     @staticmethod
-    def _parse_yaml_opts(opts_yaml):
-        _opt_names = []
-        _opt_groups = OrderedDict()
+    def _parse_yaml_opts(opts_yaml: Union[str, bytes]):
+        """
+
+        Parameters
+        ----------
+        opts_yaml
+
+        Returns
+        -------
+
+        """
+        _opts_byname = OrderedDict()
+        _opts_bygroup = OrderedDict()
         for grp in yaml.load(opts_yaml, Loader=yaml.FullLoader):
             grp_name, args = list(grp.items())[0]
-            _opt_groups[grp_name] = OrderedDict()
+            _opts_bygroup[grp_name] = OrderedDict()
             for arg in args:
                 arg_name, d = list(arg.items())[0]
-                _opt_groups[grp_name][arg_name] = d
-                _opt_names.append(arg_name)
-        return _opt_names, _opt_groups
+                _opts_byname[arg_name] = d
+                _opts_bygroup[grp_name][arg_name] = d
+
+        return _opts_byname, _opts_bygroup
 
     def outfile_path(self, suffix):
         basename = '%s-%s' % (self.exp_tag, suffix)
         return os.path.join(self.outdir, basename)
+
+    def _fmt_val(self, arg_name):
+        v = getattr(self, arg_name, "Not set")
+        # formatting for files
+        v = getattr(v, 'name') if hasattr(v, 'name') else v
+        # formatting for list
+        if isinstance(v, list):
+            v = ', '.join(map(str, v))
+        return v
 
     def __str__(self):
         ret = []
@@ -105,14 +164,19 @@ class OptionsBase(object):
         for group_name, args in self.opt_groups.items():
             ret.append('{}'.format(group_name))
             for arg_name in args.keys():
-                v = getattr(self, arg_name, "Not set")
-                # formatting for files
-                v = getattr(v, 'name') if hasattr(v, 'name') else v
-                # formatting for list
-                # pass
-                ret.append('    {:30}{}'.format(arg_name + ':', v))
+                v = self._fmt_val(arg_name)
+                ret.append(f'    {(arg_name+":"):30}{v}')
         return '\n'.join(ret)
 
+    def to_dataframe(self):
+        dat = []
+        if hasattr(self, 'version'):
+            dat.append((self.optiontype, '', 'version', self.version))
+        for group_name, args in self.opt_groups.items():
+            for arg_name in args.keys():
+                v = self._fmt_val(arg_name)
+                dat.append((self.optiontype, group_name, arg_name, v))
+        return pd.DataFrame(dat, columns=['stage', 'mode', 'var', 'value'])
 
 def configure_logging(opts):
     """ Configure logging options
@@ -138,10 +202,18 @@ def configure_logging(opts):
 
     logfmt = '%(asctime)s %(levelname)-8s %(message)-60s'
     logfmt += ' (from %(funcName)s in %(filename)s:%(lineno)d)'
-    logging.basicConfig(level=loglev,
-                        format=logfmt,
-                        datefmt='%Y-%m-%d %H:%M:%S',
-                        stream=opts.logfile)
+
+    if opts.logfile is None:
+        logging.basicConfig(level=loglev,
+                            format=logfmt,
+                            datefmt='%Y-%m-%d %H:%M:%S',
+                            stream=sys.stderr)
+    else:
+        logging.basicConfig(level=loglev,
+                            format=logfmt,
+                            datefmt='%Y-%m-%d %H:%M:%S',
+                            filename=opts.logfile)
+
     return
 
 
@@ -176,7 +248,7 @@ def human_format(num: int) -> str:
     return '%.1f%s' % (num, ['', 'K', 'M', 'G', 'T', 'P'][magnitude])
 
 
-def log_progress(nfrags: int, overwrite: bool = True) -> None:
+def log_progress(nfrags: int, overwrite: bool = False) -> None:
     """
 
     Parameters
@@ -297,3 +369,5 @@ def sha1_head(
     """
     return checksum_head(filename, hash_obj=hashlib.sha1(), maxsize=maxsize)
 
+
+USE_EXTENDED = False

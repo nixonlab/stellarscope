@@ -15,5 +15,4 @@ dependencies:
   - htslib
   - intervaltree
   - pandas
-  - samtools
-  - pip
+  - samtools >=1.16

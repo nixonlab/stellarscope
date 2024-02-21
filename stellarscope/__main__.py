@@ -9,6 +9,7 @@ import sys
 import os
 import argparse
 import errno
+import warnings
 
 import numpy as np
 
@@ -26,8 +27,7 @@ __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
     Floating point errors (division by zero, overflow, underflow, etc.) are
     not ignored and need to be handled.
 '''
-np.seterr(all='raise')
-
+np.seterr(divide='raise', over='raise', under='raise', invalid='raise')
 
 def generate_test_command(args, singlecell = False):
     try:
@@ -66,6 +66,7 @@ ST_USAGE = ''' %(prog)s <command> [<args>]
 The most commonly used commands are:
     cellsort  Sort and filter BAM file according to cell barcode    
     assign    Reassign ambiguous fragments that map to repetitive elements
+    resume    Resume previous run from checkpoint file
 '''
 
 class StellarscopeHelpFormatter(
@@ -107,7 +108,7 @@ def stellarscope():
     resume_parser = subparsers.add_parser(
         'resume',
         description='''Resume a previous stellarscope run''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=StellarscopeHelpFormatter,
     )
     stellarscope_resume.StellarscopeResumeOptions.add_arguments(resume_parser)
     resume_parser.set_defaults(func=stellarscope_resume.run)
@@ -121,14 +122,14 @@ def stellarscope():
     cellsort_parser.set_defaults(func=stellarscope_cellsort.run)
 
     ''' Parser for merge '''
-    merge_parser = subparsers.add_parser(
-        'merge',
-        description='''Merge stellarscope-generated single-cell transposable element counts with a 
-        single-cell gene count matrix''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
-    merge_parser.set_defaults(func=stellarscope_merge.run)
+    # merge_parser = subparsers.add_parser(
+    #     'merge',
+    #     description='''Merge stellarscope-generated single-cell transposable element counts with a
+    #     single-cell gene count matrix''',
+    #     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    # )
+    # stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
+    # merge_parser.set_defaults(func=stellarscope_merge.run)
 
     ''' Parser for test '''
     test_parser = subparsers.add_parser('test',

@@ -4,28 +4,37 @@
 from __future__ import division
 from __future__ import annotations
 
+import typing
+from collections.abc import Mapping
+
 import numpy.random
 from future import standard_library
 standard_library.install_aliases()
 from builtins import range
 from typing import Optional
 
+import multiprocessing
+from functools import partial
+
 import numpy as np
 import scipy.sparse
+from scipy.sparse import dok_array
 from numpy.random import default_rng
+from collections import defaultdict
+
+import logging as lg
+
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
 
 def _recip0(v):
     ''' Return the reciprocal of a vector '''
-    old_settings = np.seterr(divide='ignore')
+    _preverr = np.seterr(divide='ignore')
     ret = 1. / v
     ret[np.isinf(ret)] = 0
-    np.seterr(**old_settings)
+    np.seterr(**_preverr)
     return ret
-
-
 
 
 class csr_matrix_plus(scipy.sparse.csr_matrix):
@@ -47,10 +56,6 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [ 0.          0.          1.        ]
              [ 0.26666667  0.33333333  0.4       ]]
         """
-        # return self._norm_loop(axis)
-        return self._norm(axis)
-
-    def _norm(self, axis=None):
         if axis is None:
             return self.multiply(1. / self.sum())
         elif axis == 0:
@@ -59,6 +64,24 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             return self.multiply(_recip0(self.sum(1)))
 
     def _norm_loop(self, axis=None):
+        """
+
+        Parameters
+        ----------
+        axis
+
+        Returns
+        -------
+
+        .. deprecated::
+            This implementation is considerably slower than the solution
+            using multiply, code is here for reference purposes.
+
+        """
+        raise DeprecationWarning('''
+            This implementation is considerably slower than the solution
+            using multiply, code is here for reference purposes.            
+        ''')
         if axis is None:
             ret = self.copy().astype(np.float)
             ret.data /= sum(ret)
@@ -76,11 +99,20 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
     def scale(self, axis=None):
         """ Scale matrix so values are between 0 and 1
 
-        Args:
-            axis:
+        Parameters
+        ----------
+        axis : Optional[int]
+            Axis along which to scale values. The default, `axis=None`,
+            scales by the maximum value of the input array. `axis=1` scales
+            each row.
 
-        Returns:
-        Examples:
+        Returns
+        -------
+            csr_matrix_plus
+                Sparse CSR matrix where values are scaled by the max value
+
+        Examples
+        --------
             >>> M = csr_matrix_plus([[10, 0, 20],[0, 0, 30],[40, 50, 60]])
             >>> print(M.scale().toarray())
             [[ 0.1  0.   0.2]
@@ -91,27 +123,31 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [ 0.   0.   1. ]
              [ 0.4  0.5  1. ]]
         """
-        return self._scale(axis)
-
-    def _scale(self, axis=None):
         if self.nnz == 0: return self
         if axis is None:
             return self.multiply(1. / self.max())
-            # ret = self.copy().astype(np.float)
-            # return ret / ret.max()
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
             return self.multiply(_recip0(self.max(1).toarray()))
 
-    def binmax(self, axis=None):
-        """ Set max values to 1 and others to 0
+    def binmax(self, axis: Optional[int] = None):
+        """ Return binary matrix where location of max value is 1, 0 otherwise
 
-        Args:
-            axis:
+        Parameters
+        ----------
+        axis : Optional[int]
+            Axis along which maximum is determined. The default, `axis=None`,
+            will use the max of the input array. `axis=1` assigns 1 to the
+            maximum value or values for each row.
 
-        Returns:
-        Examples:
+        Returns
+        -------
+            csr_matrix_plus
+                Sparse CSR matrix where location(s) of max value == 1
+
+        Examples
+        --------
             >>> M = csr_matrix_plus([[6, 0, 2],[0, 0, 3],[4, 5, 6]])
             >>> print(M.binmax().toarray())
             [[1 0 0]
@@ -123,7 +159,12 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
              [0 0 1]]
         """
         if axis is None:
-            raise NotImplementedError
+            d_max = max(self.data)
+            _data = np.where(self.data == d_max, 1, 0)
+            ret = type(self)((_data, self.indices.copy(), self.indptr.copy()),
+                              shape=self.shape)
+            ret.eliminate_zeros()
+            return ret
         elif axis == 0:
             raise NotImplementedError
         elif axis == 1:
@@ -137,6 +178,16 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             return ret
 
     def count(self, axis=None):
+        """
+
+        Parameters
+        ----------
+        axis
+
+        Returns
+        -------
+
+        """
         if axis is None:
             raise NotImplementedError
         elif axis == 0:
@@ -199,9 +250,50 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
                                self.data.dtype, count=len(self.data))
         return ret
 
-    def multiply(self, other):
-        return type(self)(super().multiply(other))
+    def multiply(self, other, use_log=False):
+        def _logsumexp():
+            lg.debug('using _logsumexp')
+            _lself = self.astype(np.float128)
+            _lself.data = np.log(_lself.data)
 
+            _lother = type(self)(other, dtype=np.float128)
+            _lother.data = np.log(_lother.data)
+            _errmsg = f"incompatible shapes: {_lself.shape} {_lother.shape}"
+            if _lself.shape == _lother.shape:
+                _sum = _lself + _lother
+            elif _lself.ndim == _lother.ndim == 2:
+                if _lother.shape[1] == 1:
+                    lg.debug('_logsumexp with other.shape[1]==1 (SLOW)')
+                    _sum = _lself.copy()
+                    for i in range(_sum.shape[0]):
+                        if _sum.indptr[i] != _sum.indptr[i+1]:
+                            _sum.data[_sum.indptr[i]:_sum.indptr[i+1]] =\
+                                _sum.data[_sum.indptr[i]:_sum.indptr[i+1]] +\
+                                _lother[i,0]
+                else:
+                    raise ValueError(_errmsg)
+            else:
+                raise ValueError(_errmsg)
+
+            _exp = _sum.copy()
+            _exp.data = np.exp(_exp.data)
+            return type(self)(_exp, dtype=np.float128)
+
+        try:
+            return type(self)(super().multiply(other))
+        except FloatingPointError:
+            lg.debug('using extended precision: csr_matrix_plus.multiply')
+            _xself = scipy.sparse.csr_matrix(self).astype(np.float128)
+            try:
+                ret = type(self)(_xself.multiply(other))
+            except FloatingPointError:
+                _preverr = np.seterr(under='ignore')
+                if not use_log:
+                    ret = type(self)(_xself.multiply(other))
+                else:
+                    ret = _logsumexp()
+                np.seterr(**_preverr)
+            return ret
 
     def colsums(self) -> csr_matrix_plus:
         """ Sum columns and return as `csr_matrix_plus`
@@ -233,6 +325,75 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
                 continue
             _dok[0, i] = sum(_csc.data[_csc.indptr[i]:_csc.indptr[i + 1]])
         return type(self)(_dok)
+
+    def groupby_sum_slice(self,
+                    by: Mapping[int, str | int] | typing.Callable,
+                    group_index: bool = True,
+                    dtype = np.float64
+    ):
+        """
+
+        Parameters
+        ----------
+        by: Mapping[int, str | int] | typing.Callable
+            Function that is called on each index to determine the groups
+        group_index: bool
+            If True (default) returns a two-tuple with the group names in the
+            same order as the matrix rows.
+        dtype
+            The datatype of the return matrix
+
+        Returns
+        -------
+
+        """
+        if isinstance(by, Mapping):
+            inv_by = defaultdict(list)
+            for k,v in by.items():
+                inv_by[v].append(k)
+
+        for k, v in inv_by.items():
+            inv_by[k] = np.array(sorted(v))
+
+        mat = dok_array((len(inv_by), self.shape[1]), dtype=dtype)
+        for i, (group, select_ind) in enumerate(inv_by.items()):
+            mat[i,] = self[select_ind, ].sum(0)
+
+        if group_index:
+            return type(self)(mat), list(inv_by.keys())
+        else:
+            return type(self)(mat)
+
+    def groupby_sum(self,
+                    by: Mapping[int, str | int] | typing.Callable,
+                    group_index: bool = True,
+                    dtype = np.float64,
+                    proc: int = 1
+    ):
+        if proc > 1:
+            return parallel_groupby_sum(
+                self, by, group_index, dtype, proc
+            )
+
+        if isinstance(by, Mapping):
+            inv_by = defaultdict(list)
+            for k,v in by.items():
+                inv_by[v].append(k)
+
+        aggrows = []
+        for i, (group, select_ind) in enumerate(inv_by.items()):
+            aggrows.append(
+                self.multiply(
+                    row_identity_matrix(select_ind, self.shape[0])
+                ).colsums()
+            )
+
+        mat = scipy.sparse.vstack(aggrows, dtype=dtype)
+
+        if group_index:
+            return type(self)(mat), list(inv_by.keys())
+        else:
+            return type(self)(mat)
 
     def save(self, filename):
         np.savez(filename, data=self.data, indices=self.indices,
@@ -270,14 +431,77 @@ def row_identity_matrix(selected, nrows):
         Sparse matrix with shape = (nrows, 1)
 
     """
-    _nnz = len(selected)
-    _data = [1] * _nnz
-    _i = selected
-    _j = [0] * _nnz
+    _ridx = sorted([*{*selected}])
+    _nnz = len(_ridx)
     _M = scipy.sparse.coo_matrix(
-        (_data, (_i, _j)),
+        (np.zeros(_nnz) + 1, (_ridx, np.zeros(_nnz))),
         shape=(nrows, 1),
         dtype=np.uint8
     )
     return csr_matrix_plus(_M)
 
+def bool_inv(m):
+    """ Invert/negate boolean matrix
+
+    Parameters
+    ----------
+    m : csr_matrix_plus
+        Boolean sparse matrix represented with integers.
+        (0 is False, 1 is True)
+
+    Returns
+    -------
+    csr_matrix_plus
+        Sparse matrix where ret[i,j] == !m[i,j]
+
+    """
+    return csr_matrix_plus(
+        np.ones(m.shape) - m,
+        dtype=m.dtype
+    )
+
+
+def divide_extp(num, denom):
+    if np.ndim(num) == 2 and np.ndim(denom) == 0: # matrix / scalar
+        _num_csr = csr_matrix_plus(num)
+        _log_num_data = np.log(_num_csr.data)
+        _log_denom = np.log(denom)
+        try:
+            _ret_data = np.exp(_log_num_data - _log_denom)
+        except FloatingPointError:
+            _preverr = np.seterr(under='ignore')
+            _ret_data = np.exp(_log_num_data - _log_denom)
+            np.seterr(**_preverr)
+
+        ret = _num_csr.copy()
+        ret.data = _ret_data
+        return ret
+    else:
+        raise NotImplementedError("only matrix/scalar")
+
+def group_colsum(sel: list[int], mat: csr_matrix_plus):
+    return mat.multiply(row_identity_matrix(sel, mat.shape[0])).colsums()
+
+def parallel_groupby_sum(
+        mat: csr_matrix_plus,
+        by: Mapping[int, str | int] | typing.Callable,
+        group_index: bool = True,
+        dtype = np.float64,
+        proc: int = 1
+):
+    if isinstance(by, Mapping):
+        inv_by = defaultdict(list)
+        for k,v in by.items():
+            inv_by[v].append(k)
+
+    with multiprocessing.Pool(proc) as pool:
+        lg.debug(f'  (Using pool of {proc} workers)')
+        _part = partial(group_colsum, mat=mat)
+        aggrows = pool.map(_part, inv_by.values(), 40)
+
+    ret = scipy.sparse.vstack(aggrows, dtype=dtype)
+
+    if group_index:
+        return type(mat)(ret), list(inv_by.keys())
+    else:
+        return type(mat)(ret)

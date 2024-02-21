@@ -3,10 +3,13 @@
         positional: True
         help: Input alignment file. Alignment file can be in SAM or BAM
           format.
-    - barcodes:
+    - filtered_bc:
         positional: True
-        help: Path to file containing barcodes passing filter.
-    - ncpu:
+        help: |
+            Path to file of allowed cell barcodes. Reads with cell barcodes 
+            that are not in this list are excluded (tab-delimited file with
+            cell barcode in the first column).
+    - nproc:
         default: 1
         type: int
         help: Number of cores to use.

@@ -54,8 +54,12 @@ mprofile*.py
 src/*.c
 _dist
 stellarscope/utils/*.c
+stellarscope/utils/*.cpp
 stellarscope/data/*
 !stellarscope/data/alignment.bam
 !stellarscope/data/annotation.gtf
 !stellarscope/data/stellarscope_report.tsv
 stellarscope-checkpoint.npz
+stellarscope/optimize/*
+.ipynb_checkpoints
+stellarscope/.ipynb_checkpoints

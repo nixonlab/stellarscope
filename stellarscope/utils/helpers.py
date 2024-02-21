@@ -73,6 +73,22 @@ def format_minutes(seconds):
     return '%d minutes and %d secs' % (mins,secs)
 
 
+def fmt_delta(td):
+    hms = str(td)
+    try:
+        if int(hms.split(':')[0]):
+            return f'{hms.split(".")[0]} h:m:s'
+        else:
+            ms = ':'.join(hms.split(':')[1:])
+            if int(ms.split(':')[0]):
+                return f'{ms.split(".")[0]} m:s'
+            else:
+                sec = float(ms.split(':')[-1])
+                return f'{sec:.03f} secs'
+    except ValueError:
+        return hms
+
+
 def merge_blocks(ivs, dist=0):
     """ Merge blocks
 

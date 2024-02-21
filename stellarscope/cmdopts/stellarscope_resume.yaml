@@ -1,71 +1,27 @@
 - Input Options:
-    - samfile:
+    - checkpoint:
         positional: True
         help: |
             Path to alignment file. Alignment file can be in SAM or BAM format.
             Alignments must be ordered so that all alignments for a read or
             read pair appear sequentially in the file i.e. sorted by query name
             or collated.
-    - gtffile:
-        positional: True
-        help: Path to annotation file (GTF format).
-    - filtered_bc:
-        flag: "-whitelist"
-        type: str
-        help: |
-            Path to file of allowed cell barcodes. Reads with cell barcodes 
-            that are not in this list are excluded (tab-delimited file with
-            cell barcode in the first column).
     - celltype_tsv:
         type: str
         help: |
             Path to tab-delimited text file with celltype assignments, with
             cell barcodes in first column and celltype string in the second.
             Required if pooling_mode is 'celltype', ignored otherwise.
-    - barcode_tag:
-        type: str
-        default: CB
-        help: SAM/BAM field containing the cell barcode.
-    - umi_tag:
-        type: str
-        default: UB
-        help: SAM/BAM field containing the UMI.
-    - attribute:
-        default: locus
-        help: |
-            GTF attribute to be used as feature ID. Typically a "feature" is 
-            a single transposable element locus. GTF feature rows that share 
-            the same value for `--attribute` will be considered as part of the
-            same locus.
-    - feature_type:
-          default: exon
-          help: |
-              Feature type (3rd column in GTF file) to be used, all features 
-              of other types are ignored.
-    - no_feature_key:
-        default: __no_feature
-        help: |
-            Used internally to represent alignments. Must be different from all
-            from all other feature names used in the annotation.
     - nproc:
         default: 1
         type: int
         help: Number of processes to use. Parallelization is used in model 
               fitting (EM) for the "individual" and "celltype" pooling modes.
-    - tempdir:
-        help: |
-            Path to temporary directory. Temporary files will be stored
-            here. Default uses python tempfile package to create the
-            temporary directory.
-        hide: True
-
-
 - Reporting Options:
     - outdir:
-        default: .
-        help: Output directory.
+        help: Output directory. Default is path to checkpoint file.
     - exp_tag:
-        default: stellarscope
+        default: stResume
         help: Experiment tag. Prefix for all output files.
     - updated_sam:
         action: store_true
@@ -87,15 +43,9 @@
     - debug:
         action: store_true
         help: Print verbose debug messages.
-    - progress:
-        type: int
-        default: 1000000
-        help: Frequency of alignment processing progress message. Set to 0
-              to suppress message.
 - Run Modes:
     - pooling_mode:
         type: str
-        default: pseudobulk
         choices:
           - pseudobulk
           - individual
@@ -165,8 +115,8 @@
         type: int
         help: |
             Seed for random number generator, used by reassign modes 
-            "best_random" and "initial_random". Default is to calculate
-            seed from input files. If seed = -1, then fresh, unpredictable 
+            "best_random" and "initial_random". Default is to use seed from
+            checkpoint. If seed = -1, then fresh, unpredictable 
             entropy will be pulled from the OS.
     - conf_prob:
         type: float
@@ -175,44 +125,6 @@
             Minimum posterior probability threshold for "best_conf"
             reassignment mode. Must be greater than 0.5 to ensure alignment is
             unique; range: (0.5, 1.0].
-    - overlap_mode:
-        default: threshold
-        choices:
-            - threshold
-            - intersection-strict
-            - union
-        help: |
-            Overlap mode. The method used to determine whether a fragment 
-            overlaps feature.
-    - overlap_threshold:
-        type: float
-        default: 0.2
-        help: |
-            Fraction of fragment that must be contained within a feature to be
-            to be assigned to that locus. Ignored if --overlap_method is not 
-            "threshold".
-    - annotation_class:
-        default: intervaltree
-        choices:
-            - intervaltree
-            - htseq
-        help: |
-            Annotation class to use for finding overlaps. Both htseq and
-            intervaltree appear to yield identical results. Performance
-            differences are TBD.
-    - stranded_mode:
-        type: str
-        choices:
-            - RF
-            - R
-            - FR
-            - F
-        help: |
-              Options for considering feature strand when assigning reads.
-              If None, for each feature in the annotation, returns counts for 
-              the positive strand and negative strand. If not None, specifies 
-              the orientation of paired end reads (RF - read 1 reverse strand, 
-              read 2 forward strand) and single end reads (F - forward strand).
     - ignore_umi:
         action: store_true
         help: |
@@ -237,9 +149,10 @@
         type: int
         default: 200000
         help: |
-              Prior on θ. Equivalent to adding n non-unique reads.
-              NOTE: It is recommended to set this prior to a large value. This
-              increases the penalty for non-unique reads and improves accuracy.
+              Prior on θ. Equivalent to adding n non-unique reads. NOTE: It
+              is recommended to set this prior to a large value. This
+              increases the penalty for non-unique reads and improves
+              accuracy.
     - em_epsilon:
         type: float
         default: 1e-7
