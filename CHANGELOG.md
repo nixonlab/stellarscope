@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4] (https://github.com/nixonlab/stellarscope/releases/tag/1.4) - 2023-08-19
+## [1.4](https://github.com/nixonlab/stellarscope/releases/tag/1.4) - 2023-08-19
 
 ### Added
 - **Updated README.md**
