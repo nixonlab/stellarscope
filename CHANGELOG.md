@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0.rc0](https://github.com/nixonlab/stellarscope/releases/tag/1.4.0.rc0)
+## [1.4] (https://github.com/nixonlab/stellarscope/releases/tag/1.4) - 2023-08-19
+
+### Added
+- **Updated README.md**
+- **Tutorial**
+
+## [1.4.0.rc1](https://github.com/nixonlab/stellarscope/releases/tag/1.4.0.rc1) - 2023-08-19
+
+### Fixed
+- Error when formatting elapsed times longer than 1 day 
+
+## [1.4.0.rc0](https://github.com/nixonlab/stellarscope/releases/tag/1.4.0.rc0) - 2023-08-16
 
 ### Added
 - **Implemented stages.** Workflows for `stellarscope assign` and 
