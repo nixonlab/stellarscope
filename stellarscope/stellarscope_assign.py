@@ -91,6 +91,7 @@ class StellarscopeAssignOptions(utils.OptionsBase):
             if hasattr(self, 'gtffile') and self.gtffile is not None:
                 _gtffile_sha1 = utils.sha1_head(self.gtffile)
                 _tmpseed = _tmpseed * int(_gtffile_sha1[:7], 16)
+                _tmpseed = _tmpseed % np.iinfo(np.uint32).max
             self.seed = np.uint32(_tmpseed) if _tmpseed != 1 else None
         elif self.seed == -1:
             self.seed = None

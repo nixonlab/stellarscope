@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## PENDING [1.4.1](https://github.com/nixonlab/stellarscope/releases/tag/1.4.1) - 2024-08-01
+
+### Fixed
+- Added `packaging` to `environment.yml`
+- Cython extension compiled in C99 mode
+- Fix overflow when initializing random number generator
+
 ## [1.4](https://github.com/nixonlab/stellarscope/releases/tag/1.4) - 2023-08-19
 
 ### Added
