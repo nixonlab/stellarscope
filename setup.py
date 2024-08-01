@@ -28,10 +28,12 @@ htslib_include_dirs = [d for d in htslib_include_dirs if path.exists(str(d)) ]
 
 ext = '.pyx' if USE_CYTHON else '.c'
 extensions = [
-    Extension("stellarscope.utils.calignment",
-              ["stellarscope/utils/calignment"+ext],
-              include_dirs=htslib_include_dirs,
-              ),
+    Extension(
+        "stellarscope.utils.calignment",
+        ["stellarscope/utils/calignment"+ext],
+        include_dirs=htslib_include_dirs,
+        extra_compile_args = ['-std=c99']
+    ),
 ]
 
 if USE_CYTHON:
