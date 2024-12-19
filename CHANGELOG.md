@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending
+
+### Fixed
+- Python 3.12 syntax warning for "invalid escape sequence"
+
+
 ## [1.4.1](https://github.com/nixonlab/stellarscope/releases/tag/1.4.1) - 2024-08-01
 
 ### Fixed
