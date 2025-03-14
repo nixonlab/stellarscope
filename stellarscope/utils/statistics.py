@@ -360,7 +360,7 @@ class PoolInfo(GenericInfo):
 
     @property
     def AIC(self) -> np.floating:
-        """ Calculate Akaike Information Criterion
+        r""" Calculate Akaike Information Criterion
 
         The AIC is defined as:
         .. math::
@@ -377,7 +377,7 @@ class PoolInfo(GenericInfo):
 
     @property
     def BIC(self) -> np.floating:
-        """ Calculate Bayesian Information Criterion
+        r""" Calculate Bayesian Information Criterion
 
         The BIC is defined as:
         .. math::

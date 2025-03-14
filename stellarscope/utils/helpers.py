@@ -126,7 +126,7 @@ class GenomeRegion:
     """
     def __init__(self, chrom=None, start=None, end=None, region=None):
         if region is not None:
-            m = re.match('(\w+):(\d+)-(\d+)', region)
+            m = re.match(r'(\w+):(\d+)-(\d+)', region)
             self.chrom = m.group(1)
             self.start, self.end = int(m.group(2)), int(m.group(3))
         else:
