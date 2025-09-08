@@ -1,44 +1,37 @@
 # -*- coding: utf-8 -*-
-""" Setup telescope-ngs package
-
+""" Setup stellarscope package
 """
 from __future__ import print_function
 
 from os import path, environ
-from distutils.core import setup
-from setuptools import Extension
-from setuptools import find_packages
+from setuptools import Extension, setup, find_packages
+from Cython.Build import cythonize
 
 import versioneer
+import pysam
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2025 Matthew L. Bendall"
 
-USE_CYTHON = True
-
-CONDA_PREFIX = environ.get("CONDA_PREFIX", '.')
-HTSLIB_INCLUDE_DIR = environ.get("HTSLIB_INCLUDE_DIR", None)
-
-htslib_include_dirs = [
-    HTSLIB_INCLUDE_DIR,
-    path.join(CONDA_PREFIX, 'include'),
-    path.join(CONDA_PREFIX, 'include', 'htslib'),
+include_dirs = [
+    environ.get("HTSLIB_INCLUDE_DIR", None),
+    path.join(environ.get("PREFIX", '.'), 'include'),
+    path.join(environ.get("PREFIX", '.'), 'include', 'htslib'),
 ]
-htslib_include_dirs = [d for d in htslib_include_dirs if path.exists(str(d)) ]
+include_dirs += pysam.get_include()
+include_dirs = [d for d in include_dirs if path.exists(str(d))]
 
-ext = '.pyx' if USE_CYTHON else '.c'
+ext = '.pyx'
 extensions = [
     Extension(
         "stellarscope.utils.calignment",
-        ["stellarscope/utils/calignment"+ext],
-        include_dirs=htslib_include_dirs,
+        ["stellarscope/utils/calignment" + ext],
+        include_dirs = include_dirs,
         extra_compile_args = ['-std=c99']
     ),
 ]
 
-if USE_CYTHON:
-    from Cython.Build import cythonize
-    extensions = cythonize(extensions)
+extensions = cythonize(extensions)
 
 setup(
     name='stellarscope',
@@ -53,6 +46,8 @@ setup(
         'scipy>=1.2.1',
         'pysam>=0.19',
         'intervaltree>=3.0.2',
+        'pandas',
+        'packaging',
     ],
 
     # Runnable scripts
@@ -68,9 +63,9 @@ setup(
     # data
     package_data = {
         'stellarscope': [
-            'data/alignment.bam',
-            'data/annotation.gtf',
-            'data/telescope_report.tsv',
+            # 'data/alignment.bam',
+            # 'data/annotation.gtf',
+            # 'data/telescope_report.tsv',
             'cmdopts/*.yaml',
         ],
     },
@@ -78,11 +73,9 @@ setup(
     # metadata for upload to PyPI
     author='Matthew L. Bendall',
     author_email='bendall@gwu.edu',
-    description='Single cell, single locus resolution of transposable element expression '
-                'using next-generation sequencing.',
+    description='Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing.',
     license='MIT',
     keywords='',
-    url='https://github.com/mlbendall/stellarscope',
-
+    url='https://github.com/nixonlab/stellarscope',
     zip_safe=False
 )
