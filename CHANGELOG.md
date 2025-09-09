@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5](https://github.com/nixonlab/stellarscope/releases/tag/1.5) - 2025-09-09
+
+### Added
+
+- Implemented `stellarscope resolve` which resolves UMIs that overlap 
+  both TEs and CGs by subtracting counts from the TE matrix. The resulting
+  matrix with TE-exclusive UMI counts is output as `TE_counts.exclusive.mtx`.
+  A text-based summary of the number of UMIs subtracted is also
+  reported: `TE_counts.resolve_summary.txt`.
+- Updates to documentation including a link to our paper 
+
+### Fixed
+- Updated `setup.py` for bioconda installation
+
 ## [1.4.2](https://github.com/nixonlab/stellarscope/releases/tag/1.4.2) - 2024-12-19
 
 ### Fixed
