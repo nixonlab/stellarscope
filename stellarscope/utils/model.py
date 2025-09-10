@@ -829,8 +829,8 @@ class Stellarscope(object):
     ctype_bcode_map: DefaultDict[set[str]]
     celltypes: list[str]
 
-    corrected: csr_matrix | None
-    umi_dups: csr_matrix | None
+    corrected: Optional[csr_matrix]
+    umi_dups: Optional[csr_matrix]
 
     reassignments: dict[str, csr_matrix]
 

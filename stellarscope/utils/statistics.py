@@ -273,12 +273,12 @@ class FitInfo(GenericInfo):
     converged: bool
     reached_max: bool
     nparams: int
-    nobs: int | None
-    nfeats: int | None
-    epsilon: float | None
-    max_iter: int | None
+    nobs: Optional[int]
+    nfeats: Optional[int]
+    epsilon: Optional[float]
+    max_iter: Optional[int]
     iterations: list[tuple[int,float,float]]
-    final_lnl: float | None
+    final_lnl: Optional[float]
 
     def __init__(self, tl: Optional['TelescopeLikelihood'] = None):
         super().__init__()
@@ -414,8 +414,8 @@ class ReassignInfo(GenericInfo):
     reassign_mode: str
     _assigned: int
     _ambiguous: int
-    _unaligned: int | None
-    ambiguous_dist: typing.Counter | None
+    _unaligned: Optional[int]
+    ambiguous_dist: Optional[typing.Counter]
 
     explanations = {
         'best_exclude': 'remain ambiguous -> excluded',
@@ -498,7 +498,7 @@ class ReassignInfo(GenericInfo):
 class UMIInfo(GenericInfo):
     rpu_counter: typing.Counter
     rpu_bins: list[int]
-    rpu_hist: npt.ArrayLike | None
+    rpu_hist: Optional[npt.ArrayLike]
     ncomps_umi: typing.Counter
     nexclude: int
 
@@ -626,7 +626,7 @@ class UMIInfo(GenericInfo):
 
 
 def output_stats(
-        infolist: list[GenericInfo|OptionsBase],
+        infolist: list[Union[GenericInfo, OptionsBase]],
         outfile: Union[str, bytes, os.PathLike, None] = None
 ):
     """ Concatenate DataFrames and output to table

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
+from __future__ import division
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2019 Matthew L. Bendall"
 
-from __future__ import division
 from builtins import range
 from past.utils import old_div
 from builtins import object
