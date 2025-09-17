@@ -23,8 +23,10 @@
         default: 0
         help: Provide additional information about command processing.
     - logfile:
-        type: argparse.FileType('r')
-        help: Log output to this file.
+        type: str
+        help: |
+          Log messages to this file. If not provided, output messages will be
+          written to <stderr>.
     - outfile:
         default: 'Aligned.sortedByCB.out.bam'
         help: File to write alignments to.
