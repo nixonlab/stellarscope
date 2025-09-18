@@ -51,7 +51,8 @@ class InitStellarscope(Stage):
         self.startrun()
         opts.init_rng()
         st_obj = Stellarscope(opts)
-        st_obj.load_filtlist()
+        if opts.filtered_bc is not None:
+            st_obj.load_filtlist()
 
         if opts.pooling_mode == 'celltype':
             if opts.celltype_tsv is None:

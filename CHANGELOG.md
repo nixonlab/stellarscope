@@ -2,10 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.5](https://github.com/nixonlab/stellarscope/releases/tag/1.5) - 2025-09-09
+## [1.5](https://github.com/nixonlab/stellarscope/releases/tag/1.5) - 2025-09-18
+
+### Changed
+- The `--filtered_bc` argument is optional for `stellarscope assign`. If
+  the input alignment has already been filtered using `stellarscope cellsort`,
+  there is no need to provide the file again. If not, it is highly recommended
+  to filter barcodes (using a method of choice) and provide the passing
+  barcodes, as it greatly reduces runtime.
+- Barcodes in `--filtered_bc` are no longer validated as unambiguous
+  nucleotide sequences (i.e. `regex('^[ACGT]+$')`). The reason for the change
+  is because some aligners output barcodes that include suffixes
+  (i.e. "ACGTCCTAGTCATCCA_1"), and we were using the validation to check for 
+  a header line. Header lines should be skipped using the newly added
+  argument `--filtered_bc_skip` (see below). 
 
 ### Added
 
+- Added `--filtered_bc_skip` argument to `stellarscope cellsort` and
+  `stellarscope assign` to skip lines at the beginning of the barcode file,
+  such as when the file includes header lines. 
 - Implemented `stellarscope resolve` which resolves UMIs that overlap 
   both TEs and CGs by subtracting counts from the TE matrix. The resulting
   matrix with TE-exclusive UMI counts is output as `TE_counts.exclusive.mtx`.
@@ -14,7 +30,10 @@ All notable changes to this project will be documented in this file.
 - Updates to documentation including a link to our paper 
 
 ### Fixed
+- Fixed bug in `--logfile` for `stellarscope cellsort`
 - Updated `setup.py` for bioconda installation
+
+
 
 ## [1.4.2](https://github.com/nixonlab/stellarscope/releases/tag/1.4.2) - 2024-12-19
 
