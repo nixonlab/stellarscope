@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
   is because some aligners output barcodes that include suffixes
   (i.e. "ACGTCCTAGTCATCCA_1"), and we were using the validation to check for 
   a header line. Header lines should be skipped using the newly added
-  argument `--filtered_bc_skip` (see below). 
+  argument `--filtered_bc_skip` (see below).
 
 ### Added
 
