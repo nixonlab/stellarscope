@@ -39,15 +39,17 @@ setup(
     packages=find_packages(),
 
     install_requires=[
-        'future',
-        'pyyaml',
         'cython',
-        'numpy>=1.16.3',
+        'future',
+        'pyyaml>=5.1',
+        'numpy',
         'scipy>=1.2.1',
-        'pysam>=0.19',
+        'pysam >= 0.19',
         'intervaltree>=3.0.2',
         'pandas',
         'packaging',
+        # conda packages
+        # 'samtools>=1.16',
     ],
 
     # Runnable scripts
