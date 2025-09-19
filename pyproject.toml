@@ -12,7 +12,7 @@ name = "stellarscope"
 description = "Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing."
 authors = [
     { name = "Matthew L. Bendall", email = "bendall@gwu.edu" },
-    ( name = "Helena Reyes-Gopar"},
+    { name = "Helena Reyes-Gopar"},
 ]
 dynamic = ["version"]
 readme = "README.md"
