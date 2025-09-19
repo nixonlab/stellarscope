@@ -9,14 +9,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stellarscope"
-dynamic = ["version"]
 description = "Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing."
 authors = [
-    { name = "Matthew L. Bendall" }
+    { name = "Matthew L. Bendall", email = "bendall@gwu.edu" },
+    ( name = "Helena Reyes-Gopar"},
 ]
+dynamic = ["version"]
 readme = "README.md"
-license = { file = "LICENSE" }
-requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
 
 dependencies = [
     "future>=0.17.1",
@@ -29,8 +31,12 @@ dependencies = [
     "packaging"
 ]
 
+[project.scripts]
+stellarscope = "stellarscope.__main__:stellarscope"
+
 [project.urls]
 Homepage = "https://github.com/nixonlab/stellarscope"
 Issues = "https://github.com/nixonlab/stellarscope/issues"
 
-
+[tool.setuptools_scm]
+version_file = 'stellarscope/_version.py'
