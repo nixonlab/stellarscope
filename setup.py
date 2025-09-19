@@ -7,7 +7,7 @@ from os import path, environ
 from setuptools import Extension, setup, find_packages
 from Cython.Build import cythonize
 
-import versioneer
+# import versioneer
 import pysam
 
 __author__ = 'Matthew L. Bendall'
@@ -35,7 +35,7 @@ extensions = cythonize(extensions)
 
 setup(
     name='stellarscope',
-    version = versioneer.get_version(),
+#     version = versioneer.get_version(),
     packages=find_packages(),
 
     install_requires=[

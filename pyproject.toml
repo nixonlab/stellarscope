@@ -1,7 +1,36 @@
 [build-system]
 requires = [
-    "setuptools",
+    "setuptools>=80",
     "Cython",
     "pysam",
-    "versioneer-518",
+    "setuptools-scm>=8",
 ]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stellarscope"
+dynamic = ["version"]
+description = "Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing."
+authors = [
+    { name = "Matthew L. Bendall" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+
+dependencies = [
+    "future>=0.17.1",
+    "PyYAML>=5.1",
+    "numpy",
+    "scipy>=1.2.1",
+    "pysam>=0.19",
+    "intervaltree>=3.0.2",
+    "pandas",
+    "packaging"
+]
+
+[project.urls]
+Homepage = "https://github.com/nixonlab/stellarscope"
+Issues = "https://github.com/nixonlab/stellarscope/issues"
+
+
