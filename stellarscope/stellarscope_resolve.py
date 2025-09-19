@@ -257,6 +257,8 @@ class RunResolve(Stage):
         return
 
 import re
+from glob import glob
+
 def run(args):
     """
 
@@ -281,19 +283,49 @@ def run(args):
         'features_tsv',
         'barcodes_tsv'
     ]
-    if opts.stellarscope_outdir is not None:
-        _pre = os.path.join(opts.stellarscope_outdir, opts.exp_tag)
-        if opts.checkpoint is None:
-            opts.checkpoint = f'{_pre}-checkpoint.final.pickle'
-        if opts.updated_bam is None:
-            opts.updated_bam = f'{_pre}-updated.bam'
-        if opts.counts_mtx is None:
-            opts.counts_mtx = f'{_pre}-TE_counts.mtx'
-        if opts.features_tsv is None:
-            opts.features_tsv = f'{_pre}-features.tsv'
-        if opts.barcodes_tsv is None:
-            opts.barcodes_tsv = f'{_pre}-barcodes.tsv'
+    required_args = {
+        'checkpoint': ['-checkpoint.final.pickle'],
+        'updated_bam': ['-updated.bam', '-tmp_tele.bam'],
+        'counts_mtx': ['-TE_counts.mtx', f'-TE_counts.{opts.reassign_mode}.mtx'],
+        'features_tsv': ['-features.tsv'],
+        'barcodes_tsv': ['-barcodes.tsv'],
+    }
 
+    to_find = {}
+    for rarg in required_args.keys():
+        if (vstr := getattr(opts, rarg)) is None:
+            to_find[rarg] = None
+        else:
+            if os.path.isfile(vstr):
+                lg.debug(f'--{rarg} from cmdline: {vstr}')
+            else:
+                raise StellarscopeError(
+                    f"Value for '--{rarg}' is not valid file: {vstr}"
+                )
+
+    if to_find:
+        if opts.stellarscope_outdir is None:
+            _fmt = '"' + '", "'.join(to_find.keys()) + '"'
+            raise StellarscopeError(
+                f"Missing required argument(s): {_fmt}. " +
+                "Provide as command-line arguments or " +
+                "indicate `stellarscope_outdir` to search."
+            )
+        if not os.path.isdir(opts.stellarscope_outdir):
+            raise StellarscopeError(
+                f'{opts.stellarscope_outdir} is not a valid directory'
+            )
+
+        _tmp = to_find.keys()
+        for rarg in _tmp:
+            for suffix in required_args[rarg]:
+                g = glob(os.path.join(opts.stellarscope_outdir, f'{opts.exp_tag}{suffix}'))
+                lg.debug(f'found {len(g)}: matches in outdir: {g}')
+                if len(g) == 1:
+                    setattr(opts, rarg, g[0])
+                    break
+
+    # final check
     for a in required_args:
         if getattr(opts, a) is None:
             raise StellarscopeError(f"Missing required argument: --{a}")

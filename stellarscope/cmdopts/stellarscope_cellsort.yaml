@@ -23,11 +23,6 @@
         help: Path to temporary directory.
 
 - Reporting Options:
-    - verbose:
-        flag: 'v'
-        action: 'count'
-        default: 0
-        help: Provide additional information about command processing.
     - logfile:
         type: str
         help: |
@@ -36,3 +31,8 @@
     - outfile:
         default: 'Aligned.sortedByCB.out.bam'
         help: File to write alignments to.
+    - verbose:
+        flag: 'v'
+        action: 'count'
+        default: 0
+        help: Provide additional information about command processing.

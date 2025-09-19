@@ -70,3 +70,8 @@
     - no_exclusive_mtx:
         action: store_true
         help: Do not output the exclusive matrix.
+    - verbose:
+        flag: 'v'
+        action: 'count'
+        default: 0
+        help: Provide additional information about command processing.
