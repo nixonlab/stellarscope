@@ -3,83 +3,28 @@ import pkgutil
 import logging as lg
 import time
 from datetime import timedelta
-from .utils.helpers import fmt_delta
 import re
+import os
+from glob import glob
 
+from pathlib import Path
 import scipy
 from scipy import io
 import pandas as pd
 import numpy as np
 
+from stellarscope.utils.helpers import fmt_delta
 from stellarscope import StellarscopeError
 from stellarscope import utils
 from stellarscope.stages import Stage
 
-__author__ = 'Matthew Greenig'
+from typing import Union, List
+
+__author__ = 'Matthew Greenig, Matthew Bendall'
 
 
 class StellarscopeMergeOptions(utils.OptionsBase):
     OPTS_YML = pkgutil.get_data('stellarscope','cmdopts/stellarscope_merge.yaml')
-
-    def __init__(self, args):
-        super().__init__(args)
-
-
-# def load_matrix(
-#     mtx: Union[str, Path],
-#     col_tsv: Union[str, Path],
-#     row_tsv: Union[str, Path],
-#     col_tsv_skip: int = 0,
-#     col_tsv_names: List[str] = None,
-#     col_tsv_header: Any = None,
-#     row_tsv_skip: int = 0,
-#     row_tsv_names: List[str] = None,
-#     row_tsv_header: Any = None,
-# ):
-#     spmat = scipy.sparse.csr_matrix(io.mmread(mtx))
-#     col_df = pd.read_csv(
-#         col_tsv,
-#         sep='\t',
-#         skip = col_tsv_skip,
-#         header = col_tsv_header
-#     )
-#     if col_df.shape[1] != len(col_tsv_names):
-#         raise StellarscopeError('Names do not match input')
-#
-from typing import Union, List
-from pathlib import Path
-
-def merge_mtx_counts(
-    exp_tag: str,
-    CG_counts_mtx: Union[str, Path],
-    CG_features_tsv: Union[str, Path],
-    CG_barcodes_tsv: Union[str, Path],
-    TE_counts_mtx: Union[str, Path],
-    TE_features_tsv: Union[str, Path],
-    TE_barcodes_tsv: Union[str, Path],
-
-    CG_features_tsv_skip: int = 0,
-    TE_features_tsv_skip: int = 0,
-
-    CG_features_tsv_colnames: List[str] = ['id', 'name', 'feature_type'],
-    TE_features_tsv_colnames: List[str] = ['id',],
-
-    CG_barcodes_tsv_skip: int = 0,
-    TE_barcodes_tsv_skip: int = 0,
-
-    keep_nofeature: bool = False,
-    no_feature_key: str = "__no_feature",
-):
-    return
-#
-#         Output Options
-#     out_prefix:                   dummy500/pseudobulk-TE_counts.exclusive
-#     keep_nofeature:               False
-#     no_feature_key:               __no_feature
-#     logfile:                      None
-#     verbose:                      0
-#
-# )
 
 
 class RunMerge(Stage):
@@ -248,15 +193,80 @@ def run(args):
     total_time = time.perf_counter()
     opts = StellarscopeMergeOptions(args)
     utils.configure_logging(opts)
+    curstage = 0
 
-    ''' Set output prefix '''
+    """ Resolve missing arguments """
+    _ex = "" if opts.uncorrected else ".exclusive"
+
+    required_args = {
+        'CG_counts_mtx': ['matrix.mtx'],
+        'CG_features_tsv': ['features.tsv'],
+        'CG_barcodes_tsv': ['barcodes.tsv'],
+        'TE_counts_mtx': [
+            f'{opts.exp_tag}-TE_counts.{opts.reassign_mode}{_ex}.mtx',
+            f'{opts.exp_tag}-TE_counts{_ex}.mtx',
+        ],
+        'TE_features_tsv': [f'{opts.exp_tag}-features.tsv'],
+        'TE_barcodes_tsv': [f'{opts.exp_tag}-barcodes.tsv'],
+    }
+    to_find = {}
+    for rarg in required_args.keys():
+        if (vstr := getattr(opts, rarg)) is None:
+            to_find[rarg] = None
+        else:
+            if os.path.isfile(vstr):
+                lg.debug(f'--{rarg} from cmdline: {vstr}')
+            else:
+                raise StellarscopeError(
+                    f"Value for '--{rarg}' is not valid file: {vstr}"
+                )
+
+    if to_find:
+        if opts.CG_counts_dir is None or opts.TE_counts_dir is None:
+            _fmt = '"' + '", "'.join(to_find.keys()) + '"'
+            raise StellarscopeError(
+                f"Missing required argument(s): {_fmt}. " +
+                "Provide as command-line arguments or " +
+                "indicate `CG_counts_dir` and `TE_counts_dir`" +
+                "to search."
+            )
+        if not os.path.isdir(opts.CG_counts_dir):
+            raise StellarscopeError(
+                f'{opts.CG_counts_dir} is not a valid directory'
+            )
+        if not os.path.isdir(opts.TE_counts_dir):
+            raise StellarscopeError(
+                f'{opts.TE_counts_dir} is not a valid directory'
+            )
+
+        _tmp = to_find.keys()
+        for rarg in _tmp:
+            if rarg.startswith('CG'):
+                _searchdir = opts.CG_counts_dir
+            else:
+                _searchdir = opts.TE_counts_dir
+
+            for suffix in required_args[rarg]:
+                g = glob(os.path.join(_searchdir, f'*{suffix}'))
+                lg.debug(f'found {len(g)}: matches in outdir: {g}')
+                if len(g) == 1:
+                    setattr(opts, rarg, g[0])
+                    break
+    # final check
+    for a in required_args:
+        if getattr(opts, a) is None:
+            raise StellarscopeError(f"Missing required argument: --{a}")
+
+    """ Set output prefix """
     if opts.out_prefix is None or opts.out_prefix.strip() == '':
         opts.out_prefix = re.sub(r'\.mtx$', '', opts.TE_counts_mtx, flags=re.I)
 
+    """ Run merge """
+    lg.info(f'\n{opts}\n')
     RunMerge(curstage := 0).run(opts)
     curstage += 1
 
-    ''' Final '''
+    """ Final """
     _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
     lg.info(f'stellarscope merge complete in {fmt_delta(_elapsed)}')
     return

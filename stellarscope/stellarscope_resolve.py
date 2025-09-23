@@ -35,10 +35,6 @@ class StellarscopeResolveOptions(utils.OptionsBase):
     def __init__(self, args):
         super().__init__(args)
 
-    # def uvars(self):
-    #     okeys = ['version', 'func', 'optiontype', 'opt_dicts', 'opt_groups',]
-    #     return {k:v for k,v in vars(self).items() if k not in okeys}
-
 # retrieves the value of a specified tag from an alignment
 # if the tag isnt present, returns None as default
 def get_tag_default(aseg, tag, default=None):
@@ -275,14 +271,7 @@ def run(args):
     utils.configure_logging(opts)
     curstage = 0
 
-    ''' Find missing arguments '''
-    required_args = [
-        'checkpoint',
-        'updated_bam',
-        'counts_mtx',
-        'features_tsv',
-        'barcodes_tsv'
-    ]
+    """ Resolve missing arguments """
     required_args = {
         'checkpoint': ['-checkpoint.final.pickle'],
         'updated_bam': ['-updated.bam', '-tmp_tele.bam'],
@@ -330,15 +319,15 @@ def run(args):
         if getattr(opts, a) is None:
             raise StellarscopeError(f"Missing required argument: --{a}")
 
-    ''' Set output prefix '''
+    """ Set output prefix """
     if opts.out_prefix is None or opts.out_prefix.strip() == '':
         opts.out_prefix = re.sub(r'\.mtx$', '', opts.counts_mtx, flags=re.I)
 
-    ''' Run resolve '''
+    """ Run resolve """
     RunResolve(curstage).run(opts)
     curstage += 1
 
-    ''' Final '''
+    """ Final """
     _elapsed = timedelta(seconds=(time.perf_counter() - total_time))
     lg.info(f'stellarscope resolve complete in {fmt_delta(_elapsed)}')
     return
