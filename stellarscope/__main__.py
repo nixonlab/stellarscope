@@ -10,10 +10,12 @@ import os
 import argparse
 import errno
 import warnings
+import random
 
 import numpy as np
 
 from stellarscope import __version__
+from stellarscope.cli import BANNER_FUTURE, BANNER_STARWARS
 from . import stellarscope_cellsort
 from . import stellarscope_assign
 from . import stellarscope_resume
@@ -63,9 +65,8 @@ class StellarscopeHelpFormatter(
 
 def stellarscope():
     parser = argparse.ArgumentParser(
-        description='''
-            Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing.
-        ''',
+        description = random.choice([BANNER_FUTURE, BANNER_STARWARS]),
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
     if len(sys.argv) == 1:
@@ -78,7 +79,18 @@ def stellarscope():
         default=__version__,
     )
 
-    subparsers = parser.add_subparsers(help = 'sub-command help')
+    subparsers = parser.add_subparsers(
+        title = "Available sub-commands"
+    )
+    ''' Parser for cellsort '''
+    cellsort_parser = subparsers.add_parser(
+        'cellsort',
+        description='Sort and filter BAM file according to cell barcode',
+        formatter_class=StellarscopeHelpFormatter,
+        help = 'Sort and filter BAM file according to cell barcode'
+    )
+    stellarscope_cellsort.StellarscopeCellSortOptions.add_arguments(cellsort_parser)
+    cellsort_parser.set_defaults(func=stellarscope_cellsort.run)
 
     ''' Parser for assign '''
     assign_parser = subparsers.add_parser(
@@ -99,16 +111,6 @@ def stellarscope():
     )
     stellarscope_resume.StellarscopeResumeOptions.add_arguments(resume_parser)
     resume_parser.set_defaults(func = stellarscope_resume.run)
-
-    ''' Parser for cellsort '''
-    cellsort_parser = subparsers.add_parser(
-        'cellsort',
-        description='Sort and filter BAM file according to cell barcode',
-        formatter_class=StellarscopeHelpFormatter,
-        help = 'Sort and filter BAM file according to cell barcode'
-    )
-    stellarscope_cellsort.StellarscopeCellSortOptions.add_arguments(cellsort_parser)
-    cellsort_parser.set_defaults(func=stellarscope_cellsort.run)
 
     ''' Parser for resolve '''
     resolve_parser = subparsers.add_parser(
