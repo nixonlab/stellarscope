@@ -6,6 +6,8 @@ from datetime import timedelta
 from .utils.helpers import fmt_delta
 import pkgutil
 from collections import defaultdict, Counter
+import re
+from glob import glob
 
 import pysam
 import scipy
@@ -33,9 +35,9 @@ class StellarscopeResolveOptions(utils.OptionsBase):
     def __init__(self, args):
         super().__init__(args)
 
-    def uvars(self):
-        okeys = ['version', 'func', 'optiontype', 'opt_dicts', 'opt_groups',]
-        return {k:v for k,v in vars(self).items() if k not in okeys}
+    # def uvars(self):
+    #     okeys = ['version', 'func', 'optiontype', 'opt_dicts', 'opt_groups',]
+    #     return {k:v for k,v in vars(self).items() if k not in okeys}
 
 # retrieves the value of a specified tag from an alignment
 # if the tag isnt present, returns None as default
@@ -256,8 +258,6 @@ class RunResolve(Stage):
         self.endrun()
         return
 
-import re
-from glob import glob
 
 def run(args):
     """

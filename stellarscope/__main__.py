@@ -16,9 +16,9 @@ import numpy as np
 from stellarscope import __version__
 from . import stellarscope_cellsort
 from . import stellarscope_assign
-from . import stellarscope_merge
 from . import stellarscope_resume
 from . import stellarscope_resolve
+from . import stellarscope_merge
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
@@ -54,23 +54,6 @@ def generate_test_command(args, singlecell = False):
     else:
         print('stellarscope assign %s %s' % (_alnpath, _gtfpath), file=sys.stdout)
 
-# TS_USAGE = ''' %(prog)s <command> [<args>]
-#
-# The most commonly used commands are:
-#     assign    Reassign ambiguous fragments that map to repetitive elements
-#     resume    Resume previous run from checkpoint file
-#     test      Generate a command line for testing
-# '''
-#
-# ST_USAGE = ''' %(prog)s <command> [<args>]
-#
-# The most commonly used commands are:
-#     cellsort  Sort and filter BAM file according to cell barcode
-#     assign    Reassign ambiguous fragments that map to repetitive elements
-#     resume    Resume previous run from checkpoint file
-#     resolve   Resolve UMIs that overlap TEs and CGs
-#
-# '''
 
 class StellarscopeHelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
@@ -81,8 +64,8 @@ class StellarscopeHelpFormatter(
 def stellarscope():
     parser = argparse.ArgumentParser(
         description='''
-            stellarscope: Locus-specific quantification of transposable element 
-            expression in single-cell RNA-seq data''',
+            Single-cell Transposable Element Locus Level Analysis of scRNA Sequencing.
+        ''',
     )
 
     if len(sys.argv) == 1:
@@ -138,14 +121,14 @@ def stellarscope():
     resolve_parser.set_defaults(func = stellarscope_resolve.run)
 
     ''' Parser for merge '''
-    # merge_parser = subparsers.add_parser(
-    #     'merge',
-    #     description='''Merge stellarscope-generated single-cell transposable element counts with a
-    #     single-cell gene count matrix''',
-    #     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    # )
-    # stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
-    # merge_parser.set_defaults(func=stellarscope_merge.run)
+    merge_parser = subparsers.add_parser(
+        'merge',
+        description='Merge CG and TE UMI count matrices.',
+        formatter_class=StellarscopeHelpFormatter,
+        help='Merge CG and TE UMI count matrices.',
+    )
+    stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
+    merge_parser.set_defaults(func=stellarscope_merge.run)
 
     # ''' Parser for test '''
     # test_parser = subparsers.add_parser('test',
