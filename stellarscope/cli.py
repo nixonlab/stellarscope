@@ -35,14 +35,21 @@ def colorize(mstr, ljust=80, col='\x1b[40m\x1b[37m', defcol='\x1b[0m'):
     return '\n'.join(lines)
 
 def borderize(mstr, ljust = 80):
-    rlines = [_ for _ in mstr.split('\n') if _.strip()]
-    ljust = max(ljust, max(map(len,rlines))+2)
-    rlines = [_.ljust(ljust-2) for _ in rlines]
-    rlines = [f'\u2502{_}\u2502' for _ in rlines]
+    u2502 = '\u2502'  # │ light vertical
+    u2500 = '\u2500'  # ─ light horizontal
+    u256D = '\u256D'  # ╭ light arc down and right
+    u2570 = '\u2570'  # ╰ light arc up and right
+    u256E = '\u256E'  # ╮ light arc down and left
+    u256F = '\u256F'  # ╯ light arc up and left
+
+    blines = [bline for bline in mstr.split('\n') if bline.strip()]
+    ljust = max(ljust, max(map(len, blines))+2)
+    blines = [bline.ljust(ljust-2) for bline in blines]
+    blines = [f'{u2502}{bline}{u2502}' for bline in blines]
     return '\n'.join(
-        [f'\u256D{"\u2500" * (ljust-2)}\u256E'] +
-        rlines +
-        [f'\u2570{"\u2500" * (ljust - 2)}\u256F']
+        [f'{u256D}{u2500 * (ljust-2)}{u256E}'] +
+        blines +
+        [f'{u2570}{u2500 * (ljust - 2)}{u256F}']
     )
 
 BANNER_FUTURE = colorize(
