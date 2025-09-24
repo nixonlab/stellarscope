@@ -40,3 +40,9 @@ Issues = "https://github.com/nixonlab/stellarscope/issues"
 
 [tool.setuptools_scm]
 version_file = 'stellarscope/_version.py'
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+stellarscope = ["cmdopts/*.yaml"]
