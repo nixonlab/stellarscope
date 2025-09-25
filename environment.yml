@@ -4,10 +4,7 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python
-  - pip
-  - setuptools
-  - cython
+  - python >=3.9
   - future >=0.17.1
   - pyyaml >=5.1
   - numpy
@@ -17,3 +14,6 @@ dependencies:
   - pandas
   - packaging
   - samtools >=1.16
+  - pip
+  - pip:
+      - git+ssh://git@github.com/nixonlab/stellarscope.git#egg=stellarscope
