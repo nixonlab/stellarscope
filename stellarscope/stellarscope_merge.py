@@ -178,7 +178,7 @@ class RunMerge(Stage):
             header=False
         )
 
-        lg.info(f'Writing barcodes: {merged_barcodes['barcode'].shape}')
+        lg.info(f'Writing barcodes: {merged_barcodes["barcode"].shape}')
         lg.info(f'    {_outputs["barcodes_tsv"]}')
         merged_barcodes['barcode'].to_csv(
             _outputs["barcodes_tsv"],
