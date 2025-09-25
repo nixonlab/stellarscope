@@ -327,7 +327,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
         return type(self)(_dok)
 
     def groupby_sum_slice(self,
-                    by: Mapping[int, str | int] | typing.Callable,
+                    by: Union[Mapping[int, Union[str,int]], typing.Callable],
                     group_index: bool = True,
                     dtype = np.float64
     ):
@@ -335,7 +335,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
 
         Parameters
         ----------
-        by: Mapping[int, str | int] | typing.Callable
+        by: Mapping[int, Union[str, int]] | typing.Callable
             Function that is called on each index to determine the groups
         group_index: bool
             If True (default) returns a two-tuple with the group names in the
@@ -365,7 +365,7 @@ class csr_matrix_plus(scipy.sparse.csr_matrix):
             return type(self)(mat)
 
     def groupby_sum(self,
-                    by: Mapping[int, str | int] | typing.Callable,
+                    by: Union[Mapping[int, Union[str, int]], typing.Callable],
                     group_index: bool = True,
                     dtype = np.float64,
                     proc: int = 1
@@ -484,7 +484,7 @@ def group_colsum(sel: list[int], mat: csr_matrix_plus):
 
 def parallel_groupby_sum(
         mat: csr_matrix_plus,
-        by: Mapping[int, str | int] | typing.Callable,
+        by: Union[Mapping[int, Union[str, int]], typing.Callable],
         group_index: bool = True,
         dtype = np.float64,
         proc: int = 1

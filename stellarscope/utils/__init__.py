@@ -178,6 +178,10 @@ class OptionsBase(object):
                 dat.append((self.optiontype, group_name, arg_name, v))
         return pd.DataFrame(dat, columns=['stage', 'mode', 'var', 'value'])
 
+    def uvars(self):
+        okeys = ['version', 'func', 'optiontype', 'opt_dicts', 'opt_groups',]
+        return {k:v for k,v in vars(self).items() if k not in okeys}
+
 def configure_logging(opts):
     """ Configure logging options
 

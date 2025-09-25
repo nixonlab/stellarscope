@@ -829,8 +829,8 @@ class Stellarscope(object):
     ctype_bcode_map: DefaultDict[set[str]]
     celltypes: list[str]
 
-    corrected: csr_matrix | None
-    umi_dups: csr_matrix | None
+    corrected: Optional[csr_matrix]
+    umi_dups: Optional[csr_matrix]
 
     reassignments: dict[str, csr_matrix]
 
@@ -896,11 +896,8 @@ class Stellarscope(object):
             return
         with open(self.opts.filtered_bc, 'r') as fh:
             _bc_gen = (l.split('\t')[0].strip() for l in fh)
-            # Check first line is valid barcode and not column header
-            _bc = next(_bc_gen)
-            if re.match('^[ACGTacgt]+$', _bc):
-                _ = self.filtlist.setdefault(_bc, len(self.filtlist))
-            # Add the rest without checking
+            _nskip = self.opts.filtered_bc_skip
+            _headers = [next(_bc_gen) for _ in range(_nskip)]
             for _bc in _bc_gen:
                 _ = self.filtlist.setdefault(_bc, len(self.filtlist))
         return

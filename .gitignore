@@ -63,3 +63,6 @@ stellarscope-checkpoint.npz
 stellarscope/optimize/*
 .ipynb_checkpoints
 stellarscope/.ipynb_checkpoints
+
+# setuptools-scm
+stellarscope/_version.py

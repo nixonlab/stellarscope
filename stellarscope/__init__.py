@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("stellarscope")
+except PackageNotFoundError:
+    # Fallback for development installs or if the package isn't installed
+    from setuptools_scm import get_version
+    __version__ = get_version(root='..', relative_to=__file__)
 
 __author__ = 'Matthew L. Bendall'
-__copyright__ = "Copyright (C) 2023 Matthew L. Bendall"
+__copyright__ = "Copyright (C) 2025 Matthew L. Bendall"
 
-from . import _version
-__version__ = _version.get_versions()['version']
+# from . import _version
+# __version__ = _version.get_versions()['version']
 
 class StellarscopeError(Exception):
     pass

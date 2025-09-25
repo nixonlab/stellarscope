@@ -1,0 +1,77 @@
+- Input Options:
+    - stellarscope_outdir:
+        positional: True
+        nargs: "?"
+        type: str
+        help: |
+          Path to `stellarscope assign` output directory
+    - exp_tag:
+        default: stellarscope
+        help: |
+            Experiment tag. Prefix used by `stellarscope assign`
+    - checkpoint:
+        type: str
+        help: |
+            Path to Stellarscope checkpoint file (.pickle).
+    - updated_bam:
+        type: str
+        help: |
+            Path to Stellarscope updated alignment file (.bam).
+    - counts_mtx:
+        type: str
+        help: |
+            Path to Stellarscope output UMI counts (.mtx).
+    - features_tsv:
+        type: str
+        help: |
+            Path to tab-delimited text file with features corresponding
+            to counts_mtx (.tsv).
+    - barcodes_tsv:
+        type: str
+        help: |
+            Path to tab-delimited text file with barcodes corresponding to 
+            counts_mtx (.tsv).
+    - features_tsv_column:
+        type: int
+        default: 0
+        help: |
+          Column in features_tsv to use for feature names.
+    - barcodes_tsv_column:
+        type: int
+        default: 0
+        help: |
+          Column in barcodes_tsv to use for feature names.
+- Run Modes:
+    - reassign_mode:
+        type: str
+        default: best_exclude
+        choices:
+          - best_exclude
+          - best_conf
+          - best_random
+          - best_average
+          - initial_unique
+          - initial_random
+          - total_hits
+        help: |
+          Reassignment mode.
+- Output Options:
+    - out_prefix:
+        type: str
+        help: Prefix for output files.
+    - logfile:
+        type: str
+        help: |
+          Log messages to this file. If not provided, output messages will be
+          written to <stderr>.
+    - no_summary:
+        action: store_true
+        help: Do not output summary.
+    - no_exclusive_mtx:
+        action: store_true
+        help: Do not output the exclusive matrix.
+    - verbose:
+        flag: 'v'
+        action: 'count'
+        default: 0
+        help: Provide additional information about command processing.

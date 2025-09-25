@@ -1,35 +1,123 @@
 - Input Options:
-    - gene_counts:
+    - CG_counts_dir:
         positional: True
-        help: Input counts file for genes. File should be in mtx format.
-    - gene_features:
+        nargs: "?"
+        type: str
+        help: |
+            Directory containing CG counts, including `CG_counts_mtx`, 
+            `CG_features_tsv`, and `CG_barcodes_tsv`
+    - TE_counts_dir:
         positional: True
-        help: Input features file for gene count matrix. File should be in tsv format.
-    - gene_barcodes:
-        positional: True
-        help: Input barcodes file for gene count matrix. File should be in tsv format.
-    - TE_counts:
-        positional: True
-        help: Input counts file for transposable elements. File should be in mtx format.
-    - TE_features:
-        positional: True
-        help: Input features file for transposable element count matrix. File should be in tsv format.
-    - TE_barcodes:
-        positional: True
-        help: Input barcodes file for transposable element count matrix. File should be in tsv format.
-- Reporting Options:
-    - quiet:
-        action: store_true
-        help: Silence (most) output.
-    - debug:
-        action: store_true
-        help: Print debug messages.
-    - logfile:
-        type: argparse.FileType('r')
-        help: Log output to this file.
+        nargs: "?"
+        type: str
+        help: |
+            Directory containing TE counts, including `TE_counts_mtx`, 
+            `TE_features_tsv`, and `TE_barcodes_tsv`; i.e. stellarscope
+            output directory
     - exp_tag:
         default: stellarscope
-        help: Experiment tag
-    - outdir:
-        default: .
-        help: Output directory.
+        help: |
+            Experiment tag. Prefix used by `stellarscope assign`
+    - uncorrected:
+        action: 'store_true'
+        help:
+            Look for uncorrected TE counts (i.e. `TE_counts.mtx`)
+            instead of corrected TE counts (`TE_counts.exclusive.mtx`)
+    - CG_counts_mtx:
+        help: |
+            Path to CG UMI count matrix (output from CG counting program
+            i.e. STAR, CellRanger; .mtx format).
+    - CG_features_tsv:
+        help: |
+            Path to tab-delimited text file with features corresponding
+            to `CG_counts_mtx` (.tsv).
+    - CG_barcodes_tsv:
+        help: |
+            Path to tab-delimited text file with barcodes corresponding
+            to `CG_counts_mtx` (.tsv).
+    - TE_counts_mtx:
+        help: |
+          Path to TE UMI count matrix
+          (Stellarscope output; .mtx format).
+    - TE_features_tsv:
+        help: |
+          Path to tab-delimited text file with features corresponding
+          to TE_counts_mtx (.tsv).
+    - TE_barcodes_tsv:
+        help: |
+            Path to tab-delimited text file with barcodes corresponding
+            to TE_counts_mtx (.tsv).
+
+- Input format:
+    - CG_features_tsv_skip:
+          type: int
+          default: 0
+          help: |
+              Lines to skip in `CG_features_tsv`. (Set to 1 if `CG_features_tsv`
+              has header).
+    - TE_features_tsv_skip:
+          type: int
+          default: 0
+          help: |
+              Lines to skip in `TE_features_tsv`. (Set to 1 if `TE_features_tsv`
+              has header).
+    - CG_barcodes_tsv_skip:
+          type: int
+          default: 0
+          help: |
+              Lines to skip in `CG_barcodes_tsv`. (Set to 1 if `CG_barcodes_tsv`
+              has header).
+    - TE_barcodes_tsv_skip:
+          type: int
+          default: 0
+          help: |
+              Lines to skip in `TE_barcodes_tsv`. (Set to 1 if `TE_barcodes_tsv`
+              has header).
+    - CG_features_tsv_colnames:
+          type: csv
+          default: 'id,name,feature_type'
+          help: |
+              Column names in `CG_features_tsv`, comma separated.
+    - TE_features_tsv_colnames:
+          type: csv
+          default: 'id'
+          help: |
+              Column names in `TE_features_tsv`, comma separated.
+- Run Modes:
+    - reassign_mode:
+        type: str
+        default: best_exclude
+        choices:
+          - best_exclude
+          - best_conf
+          - best_random
+          - best_average
+          - initial_unique
+          - initial_random
+          - total_hits
+        help: |
+          Reassignment mode.
+- Output Options:
+    - out_prefix:
+        type: str
+        help: Prefix for output files.
+    - keep_nofeature:
+          action: 'store_true'
+          help: |
+              Do not remove the "no feature" key (`no_feature_key`) from
+              the merged alignment.
+    - no_feature_key:
+        default: __no_feature
+        help: |
+            Used internally to represent alignments. Must be different from all
+            from all other feature names used in the annotation.
+    - logfile:
+        type: str
+        help: |
+          Log messages to this file. If not provided, output messages will be
+          written to <stderr>.
+    - verbose:
+        flag: 'v'
+        action: 'count'
+        default: 0
+        help: Provide additional information about command processing.

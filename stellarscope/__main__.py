@@ -10,14 +10,17 @@ import os
 import argparse
 import errno
 import warnings
+import random
 
 import numpy as np
 
 from stellarscope import __version__
+from stellarscope.cli import BANNER_FUTURE, BANNER_STARWARS
 from . import stellarscope_cellsort
 from . import stellarscope_assign
-from . import stellarscope_merge
 from . import stellarscope_resume
+from . import stellarscope_resolve
+from . import stellarscope_merge
 
 __author__ = 'Matthew L. Bendall'
 __copyright__ = "Copyright (C) 2022 Matthew L. Bendall"
@@ -53,21 +56,6 @@ def generate_test_command(args, singlecell = False):
     else:
         print('stellarscope assign %s %s' % (_alnpath, _gtfpath), file=sys.stdout)
 
-TS_USAGE = ''' %(prog)s <command> [<args>]
-
-The most commonly used commands are:
-    assign    Reassign ambiguous fragments that map to repetitive elements
-    resume    Resume previous run from checkpoint file
-    test      Generate a command line for testing
-'''
-
-ST_USAGE = ''' %(prog)s <command> [<args>]
-
-The most commonly used commands are:
-    cellsort  Sort and filter BAM file according to cell barcode    
-    assign    Reassign ambiguous fragments that map to repetitive elements
-    resume    Resume previous run from checkpoint file
-'''
 
 class StellarscopeHelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
@@ -77,10 +65,8 @@ class StellarscopeHelpFormatter(
 
 def stellarscope():
     parser = argparse.ArgumentParser(
-        description='''
-            stellarscope: Locus-specific quantification of transposable element 
-            expression in single-cell RNA-seq data''',
-        usage=ST_USAGE
+        description = random.choice([BANNER_FUTURE, BANNER_STARWARS]),
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
     if len(sys.argv) == 1:
@@ -93,50 +79,65 @@ def stellarscope():
         default=__version__,
     )
 
-    subparsers = parser.add_subparsers(help='sub-command help')
-
-    ''' Parser for assign '''
-    assign_parser = subparsers.add_parser(
-        'assign',
-        description='''Reassign ambiguous fragments that map to repetitive elements (scRNA-seq)''',
-        formatter_class=StellarscopeHelpFormatter,
+    subparsers = parser.add_subparsers(
+        title = "Available sub-commands"
     )
-    stellarscope_assign.StellarscopeAssignOptions.add_arguments(assign_parser)
-    assign_parser.set_defaults(func=stellarscope_assign.run)
-
-    ''' Parser for resume '''
-    resume_parser = subparsers.add_parser(
-        'resume',
-        description='''Resume a previous stellarscope run''',
-        formatter_class=StellarscopeHelpFormatter,
-    )
-    stellarscope_resume.StellarscopeResumeOptions.add_arguments(resume_parser)
-    resume_parser.set_defaults(func=stellarscope_resume.run)
-
     ''' Parser for cellsort '''
-    cellsort_parser = subparsers.add_parser('cellsort',
-        description='''Sort and filter BAM file according to cell barcode''',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    cellsort_parser = subparsers.add_parser(
+        'cellsort',
+        description='Sort and filter BAM file according to cell barcode',
+        formatter_class=StellarscopeHelpFormatter,
+        help = 'Sort and filter BAM file according to cell barcode'
     )
     stellarscope_cellsort.StellarscopeCellSortOptions.add_arguments(cellsort_parser)
     cellsort_parser.set_defaults(func=stellarscope_cellsort.run)
 
-    ''' Parser for merge '''
-    # merge_parser = subparsers.add_parser(
-    #     'merge',
-    #     description='''Merge stellarscope-generated single-cell transposable element counts with a
-    #     single-cell gene count matrix''',
-    #     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    # )
-    # stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
-    # merge_parser.set_defaults(func=stellarscope_merge.run)
+    ''' Parser for assign '''
+    assign_parser = subparsers.add_parser(
+        'assign',
+        description = 'Reassign ambiguous fragments that map to repetitive elements',
+        formatter_class = StellarscopeHelpFormatter,
+        help = 'Reassign ambiguous fragments that map to repetitive elements',
+    )
+    stellarscope_assign.StellarscopeAssignOptions.add_arguments(assign_parser)
+    assign_parser.set_defaults(func = stellarscope_assign.run)
 
-    ''' Parser for test '''
-    test_parser = subparsers.add_parser('test',
-                                        description='''Print a test command''',
-                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                        )
-    test_parser.set_defaults(func=lambda args: generate_test_command(args, singlecell=True))
+    ''' Parser for resume '''
+    resume_parser = subparsers.add_parser(
+        'resume',
+        description='Resume previous run from checkpoint file',
+        formatter_class = StellarscopeHelpFormatter,
+        help = 'Resume previous run from checkpoint file',
+    )
+    stellarscope_resume.StellarscopeResumeOptions.add_arguments(resume_parser)
+    resume_parser.set_defaults(func = stellarscope_resume.run)
+
+    ''' Parser for resolve '''
+    resolve_parser = subparsers.add_parser(
+        'resolve',
+        description = 'Resolve UMIs that overlap TEs and CGs',
+        formatter_class=StellarscopeHelpFormatter,
+        help = 'Resolve UMIs that overlap TEs and CGs'
+    )
+    stellarscope_resolve.StellarscopeResolveOptions.add_arguments(resolve_parser)
+    resolve_parser.set_defaults(func = stellarscope_resolve.run)
+
+    ''' Parser for merge '''
+    merge_parser = subparsers.add_parser(
+        'merge',
+        description='Merge CG and TE UMI count matrices.',
+        formatter_class=StellarscopeHelpFormatter,
+        help='Merge CG and TE UMI count matrices.',
+    )
+    stellarscope_merge.StellarscopeMergeOptions.add_arguments(merge_parser)
+    merge_parser.set_defaults(func=stellarscope_merge.run)
+
+    # ''' Parser for test '''
+    # test_parser = subparsers.add_parser('test',
+    #                                     description='''Print a test command''',
+    #                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    #                                     )
+    # test_parser.set_defaults(func=lambda args: generate_test_command(args, singlecell=True))
 
     args = parser.parse_args()
     args.func(args)

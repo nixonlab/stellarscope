@@ -7,6 +7,7 @@ from .utils.helpers import fmt_delta
 import pkgutil
 
 import subprocess
+import shutil
 from packaging import version
 
 from . import utils
@@ -56,6 +57,7 @@ def check_samtools_version(minver: str = "1.16"):
         raise StellarscopeError(msg)
     return
 
+import tempfile
 
 class RunCellsort(Stage):
     def __init__(self, stagenum: int):
@@ -71,13 +73,14 @@ class RunCellsort(Stage):
         tempdir_arg = '' if opts.tempdir is None else f'-T {opts.tempdir}'
 
         # Filter passing cell barcodes
-        cmd1 = 'samtools view -@{ncpu:d} -u -F 4 -D CB:{bcfile:s} {inbam:s}'
+        cmd1 = 'samtools view -@{ncpu:d} -u -F 4 -D CB:<(tail -n+{tail_arg:d} {bcfile:s}) {inbam:s}'
         # Sort by cell barcode and read name
         cmd2 = 'samtools sort -@{ncpu:d} -n -t CB {tempdir_arg:s}'
 
         cmd = ' '.join([
             cmd1.format(
                 ncpu=view_thread,
+                tail_arg=(1 + opts.filtered_bc_skip),
                 bcfile=opts.filtered_bc,
                 inbam=opts.infile
             ),
@@ -95,7 +98,8 @@ class RunCellsort(Stage):
         output = subprocess.check_output(
             cmd,
             stderr=subprocess.STDOUT,
-            shell=True
+            shell=True,
+            executable=shutil.which('bash')
         )
         lg.debug('Command output:\n{}\n'.format(output.decode()))
         self.endrun()
