@@ -21,7 +21,7 @@
     - outdir:
         help: Output directory. Default is path to checkpoint file.
     - exp_tag:
-        default: stResume
+        default: stellarscope
         help: Experiment tag. Prefix for all output files.
     - updated_sam:
         action: store_true
