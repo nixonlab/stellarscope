@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function, annotations
-from __future__ import absolute_import
+from __future__ import annotations
 
 from typing import DefaultDict, Optional, Any, Union
-
-from past.utils import old_div
 
 import re
 import sys
@@ -37,7 +34,7 @@ from .sparse_plus import divide_extp
 from .statistics import FragmentInfo, AlignInfo, FitInfo, PoolInfo, ReassignInfo, UMIInfo
 
 from .colors import c2str, D2PAL, GPAL
-from .helpers import str2int, region_iter, phred
+from .helpers import str2int, phred
 
 from . import alignment
 from .alignment import get_tag_alignments

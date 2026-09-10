@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
 """ Provides sparse matrix classes augmented with additional functions
 """
-from __future__ import division
 from __future__ import annotations
 
 import typing
 from collections.abc import Mapping
 
 import numpy.random
-from future import standard_library
-standard_library.install_aliases()
-from builtins import range
 from typing import Optional
 
 import multiprocessing

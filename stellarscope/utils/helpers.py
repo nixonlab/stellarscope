@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """ Helper functions
 """
-from __future__ import division
-
-from past.utils import old_div
 import numpy as np
 import scipy
 from itertools import zip_longest
@@ -64,11 +61,11 @@ def eprob(Q):
         >>> eprob(ord('@')-33)
         0.9992056717652757
     """
-    return 1 - (10**(old_div(float(Q), -10)))
+    return 1 - (10**(float(Q) / -10))
 
 
 def format_minutes(seconds):
-    mins = old_div(seconds, 60)
+    mins = seconds // 60
     secs = seconds % 60
     return '%d minutes and %d secs' % (mins,secs)
 
@@ -120,43 +117,6 @@ def merge_blocks(ivs, dist=0):
         else:
            ret[-1] = (ret[-1][0], max(iv[1],ret[-1][1]))
     return ret
-
-class GenomeRegion:
-    """
-    """
-    def __init__(self, chrom=None, start=None, end=None, region=None):
-        if region is not None:
-            m = re.match(r'(\w+):(\d+)-(\d+)', region)
-            self.chrom = m.group(1)
-            self.start, self.end = int(m.group(2)), int(m.group(3))
-        else:
-            self.chrom = chrom
-            if start is None or end is None:
-                self.start = self.end = None
-            else:
-                self.start, self.end = int(start), int(end)
-                if self.end < self.start:
-                    self.start, self.end = self.end, self.start
-
-    def contains(self, chrom, pos):
-        if self.chrom is None: return True
-        if self.start is None: return chrom == self.chrom
-        return self.chrom == chrom and self.start <= int(pos) <= self.end
-
-    def __str__(self):
-        if self.chrom is None: return 'genome'
-        if self.start is None: return '%s' % self.chrom
-        return '%s:%d-%d' % (self.chrom, self.start, self.end)
-
-
-def region_iter(refs, lengths, winsize=1e7, overlap=0):
-    winsize, overlap = map(int, (winsize, overlap))
-    for ref,reflen in zip(refs,lengths):
-        for i in range(0, reflen, winsize):
-            regmin = max(0, i-overlap)
-            regmax = min(i+winsize+overlap, reflen)
-            yield (ref, regmin, regmax)
-
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
