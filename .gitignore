@@ -57,12 +57,23 @@ stellarscope/utils/*.c
 stellarscope/utils/*.cpp
 stellarscope/data/*
 !stellarscope/data/alignment.bam
+!stellarscope/data/alignment.bam.bai
 !stellarscope/data/annotation.gtf
-!stellarscope/data/stellarscope_report.tsv
+!stellarscope/data/telescope_report.tsv
+!stellarscope/data/README.md
 stellarscope-checkpoint.npz
 stellarscope/optimize/*
 .ipynb_checkpoints
 stellarscope/.ipynb_checkpoints
+
+# Heavy/real test data staging area (see testdata/README.md): fetched and
+# built on demand by scripts/testdata/*, never committed.
+testdata/raw/*
+testdata/reference/*
+testdata/results/*
+!testdata/raw/.gitkeep
+!testdata/reference/.gitkeep
+!testdata/results/.gitkeep
 
 # setuptools-scm
 stellarscope/_version.py
